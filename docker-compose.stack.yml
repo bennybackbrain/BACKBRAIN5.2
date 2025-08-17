@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+  api:
+    extends:
+      file: docker-compose.yml
+      service: api
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: backbrain_n8n
+    restart: unless-stopped
+    environment:
+      - GENERIC_TIMEZONE=Europe/Berlin
+      - TZ=Europe/Berlin
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - EXECUTIONS_PROCESS=main
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./n8n_workflow_summarize_file.json:/data/workflows/summarize_file_reference.json:ro
+    depends_on:
+      - api
+networks:
+  default:
+    name: backbrain_net
