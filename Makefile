@@ -1,5 +1,5 @@
 # Simple helper Makefile
-.PHONY: help dev test coverage smoke summarizer build docker-run compose logs lint clean
+.PHONY: help dev test coverage smoke summarizer build docker-run compose logs lint clean precommit
 
 help:
 	@echo "Targets: dev test coverage smoke summarizer build docker-run compose logs lint clean"
@@ -33,6 +33,10 @@ logs:
 
 lint:
 	python -m py_compile $(git ls-files '*.py')
+
+precommit:
+	python -m pip install pre-commit ruff >/dev/null 2>&1 || true
+	pre-commit install
 
 clean:
 	rm -rf .pytest_cache __pycache__ */__pycache__ backbrain.db
