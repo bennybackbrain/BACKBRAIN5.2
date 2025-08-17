@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 	enable_public_alias: bool = False  # steuert öffentliche Alias-Routen (False default for safety)
 	enable_diag: bool = False  # /diag route exposure
 	public_writefile_limit_per_minute: int = 30  # rate limit for unauthenticated public write-file (0 = disable limit)
+	rate_limit_bypass_paths: str | None = None  # comma-separated paths that bypass global rate limiter (in addition to built-ins)
 
 	# Allow unknown extra env vars (so future additions don't break startup/tests)
 	model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")  # type: ignore[arg-type]

@@ -107,6 +107,7 @@ Verifikation nach frischem Clone (kein Secret im Repo):
 ```
 grep -R "sk-proj-" . || echo "OK: kein OpenAI Key"
 grep -R "n8n_workflow" . || echo "OK: keine n8n Workflows"
+grep -R "NC_APP_PASSWORD" . || echo "OK: kein Klartext Nextcloud App-Passwort"
 ```
 
 ### Coverage
@@ -117,6 +118,21 @@ pytest --cov=app --cov-report=term-missing --cov-report=xml
 Ergebnis: `coverage.xml` (für CI Tools) und Terminal-Report. Konfiguration in `.coveragerc`.
 
 Validierungs- und Fehlerfälle werden durch zusätzliche Tests (`test_validation.py`, erweiterte Pagination-Tests) abgedeckt (422 Responses, Grenzwerte für limit/offset, fehlende Felder, ungültige Pfad-Parameter).
+
+### Rate Limiting / Bypass
+Globales Limit (pro IP) wird über `RATE_LIMIT_REQUESTS_PER_MINUTE` gesteuert (Default 120). Für bestimmte Pfade (z.B. Public GPT Actions) kann das Limit explizit umgangen werden. Built-ins: `/read-file`, `/write-file`, `/list-files`, `/get_all_summaries` (+ jeweils mit/ohne Slash). Eigene Ergänzungen kommasepariert in `.env`:
+
+```
+RATE_LIMIT_BYPASS_PATHS=/metrics,/health
+```
+
+Header Hinweise:
+```
+X-RateLimit-Limit: <max>
+X-RateLimit-Remaining: <rest>
+X-RateLimit-Bypass: true|false
+Retry-After: <Sekunden bis frei> (nur bei 429)
+```
 
 ## Logging
 Das Logging ist umgebungsabhängig konfigurierbar:
