@@ -39,7 +39,7 @@ docker compose up --build
 Danach: http://127.0.0.1:8000/docs
 
 ## Konfiguration
-Umgebungsvariablen via `.env` (siehe `.env.template`). Relevante Variablen:
+Umgebungsvariablen via `.env` (siehe `.env.example`). Relevante Variablen:
 ```
 BB_DB_URL=sqlite:///./backbrain.db
 SUMMARY_MODEL=gpt-4o-mini
