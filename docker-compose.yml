@@ -8,10 +8,13 @@ services:
         PYTHON_VERSION: "3.13"
     image: backbrain:dev
     container_name: backbrain_api
+    command: ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]
     environment:
       BB_DB_URL: sqlite:///./backbrain.db
       SUMMARY_MODEL: gpt-4o-mini
       DO_MIGRATE: "1"
+    env_file:
+      - .env
     volumes:
       - ./backbrain.db:/app/backbrain.db
       - ./app:/app/app:ro
