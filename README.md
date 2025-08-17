@@ -1,6 +1,11 @@
 # Backbrain5.2
 
+![CI](https://github.com/bennybackbrain/BACKBRAIN5.2/actions/workflows/ci.yml/badge.svg)
+
 FastAPI-Anwendung mit Persistenz (SQLite + SQLAlchemy) und Migrationssupport (Alembic).
+
+<!-- Dependabot Hinweis -->
+> Automatische Dependency-Updates via Dependabot aktiviert (pip + GitHub Actions, wöchentlich).
 
 ## Entwicklung
 
@@ -134,8 +139,9 @@ Hinweis: Für echte Produktion würde man einen Task-Queue/Worker (Celery, RQ, D
 - DB-Zugriff über SQLAlchemy Session Dependency in den Endpoints.
 
 ## Nächste Schritte (Ideen)
-- Auth / API Keys
-- Pagination & Filter für Entries
+- Erweiterte Auth (Scopes / Rollen)
+- Pagination & Filter für Entries (Grundlage vorhanden)
 - Summarization Service (OpenAI API) integrieren
-- Dockerfile + Compose
+- Dockerfile + Compose (bereits vorhanden, ggf. Prod-Hardening)
+- Rate Limiting / API Keys
 
