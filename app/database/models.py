@@ -42,3 +42,24 @@ class UserORM(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+# Minimal file model for tracking uploaded files (public alias + summaries relation)
+class FileORM(Base):
+    __tablename__ = "files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    original_name: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    storage_path: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class SummaryORM(Base):
+    __tablename__ = "summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    file_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    summary_text: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
