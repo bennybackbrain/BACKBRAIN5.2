@@ -21,6 +21,11 @@ class JobStatus(str, enum.Enum):
     failed = "failed"
 
 
+class JobType(str, enum.Enum):
+    entry = "entry"
+    file = "file"
+
+
 class JobORM(Base):
     __tablename__ = "jobs"
 
@@ -33,6 +38,8 @@ class JobORM(Base):
     result_text: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    job_type: Mapped[JobType] = mapped_column(SAEnum(JobType), default=JobType.entry, nullable=False)
+    file_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 class UserORM(Base):
