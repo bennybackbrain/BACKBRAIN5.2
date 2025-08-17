@@ -125,3 +125,23 @@ System funktionsfähig, Public Actions stabil, n8n entfernt, History bereinigt. 
 
 ---
 Letzter Zustand gespeichert – bei Wiederaufnahme hier ansetzen: History Cleanup & Tag.
+
+## 18. Nachträge (später am 2025-08-17)
+Ergänzungen nach dem ersten Snapshot:
+
+- Neues Setting: `rate_limit_bypass_paths` (kommagetrennt) ermöglicht zusätzliche Pfade vom globalen Limiter auszunehmen (Docs + `.env.example` aktualisiert).
+- WebDAV Helfer erweitert (`write_file_content`, `mkdirs`) – beseitigt ImportError im WebDAV & Public Alias Code.
+- Datenbank-Modelle ergänzt: `FileORM`, `SummaryORM` (minimal) + `JobType` Enum & Felder (`job_type`, `file_id`) in `JobORM` für Upload-/Verarbeitungs-Jobs.
+- Pre-Commit Infrastruktur hinzugefügt (`.pre-commit-config.yaml`, Ruff Lint & Format, grundlegende Hygiene Hooks) + Makefile Target `precommit`.
+- `.editorconfig` für einheitliche Formatierung.
+- Tests erneut erfolgreich: 11 passed (nach Model-/Helper-Erweiterungen).
+- README erweitert: Abschnitt zu Rate Limiting & Bypass Headers.
+- Sicherer Hinweis: Offen liegender neuer OpenAI Key derzeit nur lokal in `.env`; nicht commiten, zeitnah rotieren für Produktion.
+
+Nächste sinnvolle Folgeaktionen (optional):
+1. Alembic Migration für neue Tabellen / Felder generieren (FileORM / SummaryORM / JobType).
+2. Tag `v5.2-public-clean` nach Migration setzen.
+3. CI erweitern (Ruff Lint + Pre-Commit Runner) für Konsistenz.
+4. Export einer stabilen `openapi-public.json` (Version Freeze für GPT Actions).
+
+Pause-Punkt aktualisiert – hier fortsetzen.
