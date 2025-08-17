@@ -40,6 +40,17 @@ docker compose up --build
 ```
 Danach: http://127.0.0.1:8000/docs
 
+### Makefile Shortcuts
+```
+make dev          # run_dev.sh
+make test         # pytest -q
+make coverage     # Coverage Report
+make smoke        # Basic public API smoke
+make summarizer   # Summarizer flow smoke
+make compose      # docker compose up --build
+make logs         # follow compose logs
+```
+
 ## Konfiguration
 Umgebungsvariablen via `.env` (siehe `.env.example`). Relevante Variablen:
 ```
