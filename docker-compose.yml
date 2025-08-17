@@ -1,0 +1,38 @@
+version: "3.9"
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.13"
+    image: backbrain:dev
+    container_name: backbrain_api
+    environment:
+      BB_DB_URL: sqlite:///./backbrain.db
+      SUMMARY_MODEL: gpt-4o-mini
+      DO_MIGRATE: "1"
+    volumes:
+      - ./backbrain.db:/app/backbrain.db
+      - ./app:/app/app:ro
+      - ./migrations:/app/migrations:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8000)); s.close()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # Optional service placeholder for future (e.g., summarizer worker)
+  # worker:
+  #   build: .
+  #   command: python -m app.worker
+  #   depends_on:
+  #     - api
+
+networks:
+  default:
+    name: backbrain_net
