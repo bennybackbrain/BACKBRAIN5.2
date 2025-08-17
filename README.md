@@ -32,7 +32,7 @@ Mit Migrationen deaktiviert:
 docker run --rm -e DO_MIGRATE=0 -p 8000:8000 backbrain:dev
 ```
 
-### Docker Compose
+### Docker Compose (vereinfachter Stack)
 ```bash
 docker compose up --build
 ```
@@ -254,10 +254,9 @@ Konfiguration: Verzeichnis ist über Setting `manual_uploads_dir` (Default `BACK
 
 ## GPT Actions Integration
 
-Die API stellt unter `/actions/openapi.json` eine reduzierte OpenAPI-Spec bereit (nur `/api/v1/*`). Für GPT Actions kannst du einen API Key erstellen und das Manifest `gpt_actions.json` anpassen.
-
+Die API stellt unter `/openapi.json` jetzt die benötigten Public OperationIds (listFiles, readFile, writeFile) bereit. Eine separate n8n-Schicht ist entfernt; direkte Nutzung genügt.
 ### Schritte
-1. Öffentliche URL bereitstellen (z.B. cloudflared / ngrok): ergibt `https://<public-host>`.
+1. Öffentliche URL bereitstellen (z.B. cloudflared / ngrok oder Fly): ergibt `https://<public-host>`.
 2. API Key erzeugen:
 	```bash
 	TOKEN=... # vorher via /api/v1/auth/token holen

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-echo "[stack] Starte Backbrain API + n8n (lokal)"
+echo "[stack] Starte Backbrain API (ohne n8n)"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[stack] Docker nicht gefunden" >&2
@@ -12,10 +12,7 @@ if ! command -v docker compose >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[stack] Erstelle Datenordner n8n_data falls fehlend"
-mkdir -p n8n_data
-
-echo "[stack] Starte Dienste (api + n8n)"
+echo "[stack] Starte API Dienst"
 docker compose -f docker-compose.yml -f docker-compose.stack.yml up -d --build
 
 echo "[stack] Warte auf API (Port 8000)"
@@ -29,14 +26,5 @@ for i in {1..30}; do
     echo "[stack] API nicht erreichbar" >&2
   fi
 done
-
-echo "[stack] n8n UI: http://localhost:5678"
-echo "[stack] Importiere das Workflow JSON manuell über die n8n UI (oder per Clipboard)."
-echo "[stack] Webhook Test (nach Aktivierung / Klick auf Execute):"
-cat <<'EOF'
-curl -X POST http://localhost:5678/webhook-test/summarize-file \
-  -H 'Content-Type: application/json' \
-  -d '{"file_path":"01_inbox/beispiel.txt"}'
-EOF
 
 echo "[stack] Zum Stoppen: docker compose -f docker-compose.yml -f docker-compose.stack.yml down"
