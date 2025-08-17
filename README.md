@@ -1,5 +1,7 @@
 # Backbrain5.2
 
+![Version](https://img.shields.io/badge/version-v5.2--public--clean-blue)
+
 ![CI](https://github.com/bennybackbrain/BACKBRAIN5.2/actions/workflows/ci.yml/badge.svg)
 
 FastAPI-Anwendung mit Persistenz (SQLite + SQLAlchemy) und Migrationssupport (Alembic).
@@ -82,6 +84,18 @@ Erste Migration wurde bereits erstellt und angewendet (`entries` Tabelle).
 ## Tests
 ```bash
 pytest -q
+```
+
+### Schneller Smoke-Test
+```
+./scripts/smoke_test.sh          # Basis: health, list-files, write-file
+./scripts/summarizer_demo.sh     # Beispiel Summarizer Flow (auth benötigt)
+```
+
+Verifikation nach frischem Clone (kein Secret im Repo):
+```
+grep -R "sk-proj-" . || echo "OK: kein OpenAI Key"
+grep -R "n8n_workflow" . || echo "OK: keine n8n Workflows"
 ```
 
 ### Coverage
