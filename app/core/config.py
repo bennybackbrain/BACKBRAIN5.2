@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 	webdav_password: str | None = None  # WEBDAV_PASSWORD
 	openai_api_key: str | None = None  # OPENAI_API_KEY
 	openai_base_url: str | None = None  # OPENAI_BASE_URL (optional override)
+	confirm_use_prod_key: bool = False  # CONFIRM_USE_PROD_KEY explicit opt-in to use real OpenAI key
 	search_backend: str = "basic"  # basic|vector (vector planned)
 	rate_limit_requests_per_minute: int = 120
 	redis_url: str | None = None  # REDIS_URL for optional redis rate limiting

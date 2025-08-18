@@ -35,6 +35,13 @@ def create_app() -> FastAPI:
   """Application factory to allow fresh instances in tests with mutated settings."""
   from app.core.config import settings as live_settings  # late import for updated values
   _app = FastAPI(title=live_settings.api_name, version="0.1.0", lifespan=lifespan)
+  # --- Secret guard: prevent accidental use of production OpenAI keys locally ---
+  # Heuristic: project (sk-proj-) or regular (sk-live, sk-prod) or long length >= 70
+  key = live_settings.openai_api_key
+  if key and not live_settings.confirm_use_prod_key:
+    suspicious_prefixes = ("sk-proj-", "sk-live", "sk-prod", "sk-" )
+    if any(key.startswith(p) for p in suspicious_prefixes) and len(key) > 40:
+      raise RuntimeError("Refusing to start: OPENAI_API_KEY looks real. Set CONFIRM_USE_PROD_KEY=1 to allow.")
   # Override OpenAPI generation to inject a single servers list for GPT Action builder simplicity
   orig_openapi = _app.openapi
   def custom_openapi():  # type: ignore
