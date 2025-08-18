@@ -139,6 +139,7 @@ def public_list_files(kind: str, request: Request = None):  # type: ignore[overr
     files: list[str] = []
     degraded = False
     db_rows = 0
+    webdav_disabled = os.getenv("WEBDAV_DISABLED", "").lower() in {"1", "true", "yes"}
     try:
         with get_session() as s:  # type: ignore[assignment]
             if kind == "entries":
@@ -167,28 +168,29 @@ def public_list_files(kind: str, request: Request = None):  # type: ignore[overr
         degraded = True
         log.warning("public_list_files_degraded_db", extra={"kind": kind, "error": str(exc)})
     # Fallback: if entries and DB empty OR degraded -> attempt WebDAV directory listing
-    try:
-        if kind == "entries" and (degraded or db_rows == 0):
-            base = settings.inbox_dir
-            if base:
-                # ensure directory (best-effort)
-                try:
-                    mkdirs(base)
-                except Exception:
-                    pass
-                raw = list_dir(base)
-                web_files: list[str] = []
-                for e in raw:
-                    name = e.rsplit('/', 1)[-1]
-                    if not name or name.endswith('/'):
-                        continue
-                    web_files.append(name)
-                if web_files:
-                    # Replace only if we actually found something
-                    files = sorted(set(files) | set(web_files), reverse=True)[:500]
-                    log.info("public_list_files_webdav_fallback", extra={"kind": kind, "count": len(files), "db_rows": db_rows})
-    except Exception as exc:  # pragma: no cover
-        log.warning("public_list_files_webdav_fallback_failed", extra={"error": str(exc)})
+    if not webdav_disabled:
+        try:
+            if kind == "entries" and (degraded or db_rows == 0):
+                base = settings.inbox_dir
+                if base:
+                    # ensure directory (best-effort)
+                    try:
+                        mkdirs(base)
+                    except Exception:
+                        pass
+                    raw = list_dir(base)
+                    web_files: list[str] = []
+                    for e in raw:
+                        name = e.rsplit('/', 1)[-1]
+                        if not name or name.endswith('/'):
+                            continue
+                        web_files.append(name)
+                    if web_files:
+                        # Replace only if we actually found something
+                        files = sorted(set(files) | set(web_files), reverse=True)[:500]
+                        log.info("public_list_files_webdav_fallback", extra={"kind": kind, "count": len(files), "db_rows": db_rows})
+        except Exception as exc:  # pragma: no cover
+            log.warning("public_list_files_webdav_fallback_failed", extra={"error": str(exc)})
     # Local fallback enumeration (only if still empty)
     if not files:
         lf = _list_local_fallback(kind)
@@ -231,38 +233,51 @@ def public_read_file(name: str, kind: str = "entries", request: Request = None, 
         safe = name.replace('..', '_').lstrip('/')
         rel_path = f"{settings.summaries_dir}/{safe}" if settings.summaries_dir else safe
     content = None
-    try:
-        content = get_file_content(rel_path)
-        etag = hashlib.sha256(content.encode('utf-8')).hexdigest()
-        inm = request.headers.get('if-none-match') if request else None  # type: ignore[union-attr]
-        cache_bust = request.query_params.get('cb') if request else None  # type: ignore[union-attr]
-        if not cache_bust and inm and inm.strip('"') == etag:
-            if response is not None:
-                response.status_code = 304
-                response.headers['ETag'] = f'"{etag}"'
-                response.headers['Cache-Control'] = 'private, max-age=30'
-            return ReadFileResponse(name=name, kind=kind, content="")
-        if response is not None:
-            response.headers['ETag'] = f'"{etag}"'
-            response.headers['Cache-Control'] = 'private, max-age=30'
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="not found")
-    except Exception as exc:  # pragma: no cover
-        # Attempt local fallback read
+    webdav_disabled = os.getenv("WEBDAV_DISABLED", "").lower() in {"1", "true", "yes"}
+    etag: str | None = None
+    attempted_remote = False
+    if not webdav_disabled:
         try:
-            fallback_file = LOCAL_FALLBACK_ROOT / ("entries" if kind == "entries" else "summaries") / name
-            if fallback_file.exists():
-                content = fallback_file.read_text(encoding="utf-8", errors="replace")
-                etag = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            content = get_file_content(rel_path)
+            attempted_remote = True
+            etag = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            inm = request.headers.get('if-none-match') if request else None  # type: ignore[union-attr]
+            cache_bust = request.query_params.get('cb') if request else None  # type: ignore[union-attr]
+            if not cache_bust and inm and inm.strip('"') == etag:
                 if response is not None:
+                    response.status_code = 304
                     response.headers['ETag'] = f'"{etag}"'
                     response.headers['Cache-Control'] = 'private, max-age=30'
-            else:
-                raise HTTPException(status_code=502, detail=str(exc))
-        except HTTPException:
-            raise
-        except Exception as exc2:
-            raise HTTPException(status_code=502, detail=str(exc2))
+                return ReadFileResponse(name=name, kind=kind, content="")
+            if response is not None:
+                response.headers['ETag'] = f'"{etag}"'
+                response.headers['Cache-Control'] = 'private, max-age=30'
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="not found")
+        except Exception:
+            # Will fallback to local below
+            content = None
+    if content is None:
+        # Local fallback read
+        fallback_file = LOCAL_FALLBACK_ROOT / ("entries" if kind == "entries" else "summaries") / name
+        if fallback_file.exists():
+            content = fallback_file.read_text(encoding="utf-8", errors="replace")
+            etag = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            if response is not None:
+                response.headers['ETag'] = f'"{etag}"'
+                response.headers['Cache-Control'] = 'private, max-age=30'
+            # Conditional match check (only if remote was attempted or webdav disabled)
+            inm = request.headers.get('if-none-match') if request else None  # type: ignore[union-attr]
+            cache_bust = request.query_params.get('cb') if request else None  # type: ignore[union-attr]
+            if not cache_bust and inm and etag and inm.strip('"') == etag:
+                if response is not None:
+                    response.status_code = 304
+                return ReadFileResponse(name=name, kind=kind, content="")
+        else:
+            # Nothing found anywhere
+            if attempted_remote:
+                raise HTTPException(status_code=404, detail="not found")
+            raise HTTPException(status_code=502, detail="unavailable")
     # Optional gzip (base64) if client accepts and large content
     content_out = content
     if request and 'gzip' in request.headers.get('accept-encoding', '').lower() and len(content) > 2048:
