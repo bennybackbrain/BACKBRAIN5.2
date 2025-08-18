@@ -140,19 +140,27 @@ def create_app() -> FastAPI:
 # Default global app instance (backward compatibility)
 app = create_app()
 
-@app.get("/health")
-def health(request: Request) -> JSONResponse:  # enhanced public health
-  from os import getenv
-  machine_id = getenv("FLY_MACHINE_ID", "unknown")
-  version = "5.2-public-ok2"
-  payload = {"status": "ok", "version": version, "machine": machine_id}
-  resp = JSONResponse(payload)
-  try:
-    resp.headers['X-App-Version'] = version
-    resp.headers['X-Machine-ID'] = machine_id
+# Global machine/version identifiers (env overridable)
+from os import getenv as _getenv  # localized import to avoid polluting top-level namespace
+from typing import Callable, Awaitable
+from starlette.responses import Response as StarletteResponse
+MACHINE_ID = _getenv("FLY_MACHINE_ID", "unknown")
+APP_VERSION = _getenv("APP_VERSION", "5.2-public-ok2")
+
+@app.middleware("http")
+async def add_ids(request: Request, call_next: Callable[[Request], Awaitable[StarletteResponse]]) -> StarletteResponse:  # pragma: no cover - trivial header injection
+  resp = await call_next(request)
+  try:  # defensive: never break pipeline due to header injection
+    resp.headers["x-machine-id"] = MACHINE_ID
+    resp.headers["x-app-version"] = APP_VERSION
   except Exception:
     pass
   return resp
+
+@app.get("/health")
+def health(request: Request) -> JSONResponse:  # enhanced public health
+  payload = {"status": "ok", "version": APP_VERSION, "machine": MACHINE_ID}
+  return JSONResponse(payload)
 
 @app.get("/metrics")
 def metrics_endpoint():  # Prometheus metrics
