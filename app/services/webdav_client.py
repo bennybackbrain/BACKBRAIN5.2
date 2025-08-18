@@ -2,10 +2,15 @@
 
 Loads credentials from environment / .env and returns a webdavclient3 Client.
 
-Environment variables:
-  WEBDAV_URL
-  WEBDAV_USERNAME
-  WEBDAV_PASSWORD
+Environment variables (primary):
+    WEBDAV_URL
+    WEBDAV_USERNAME
+    WEBDAV_PASSWORD
+
+Accepted aliases (Nextcloud style) if primary unset:
+    NC_WEBDAV_BASE -> WEBDAV_URL
+    NC_USER        -> WEBDAV_USERNAME
+    NC_APP_PASSWORD-> WEBDAV_PASSWORD
 
 Functions:
   load_webdav_config() -> (url, username, password)
@@ -27,11 +32,19 @@ def load_webdav_config() -> Tuple[str, str, str]:
     if not _loaded:
         load_dotenv()  # idempotent
         _loaded = True
+    # Primary names
     url = os.getenv("WEBDAV_URL") or None
     user = os.getenv("WEBDAV_USERNAME") or None
     password = os.getenv("WEBDAV_PASSWORD") or None
+    # Aliases (only if primaries unset)
+    if not url:
+        url = os.getenv("NC_WEBDAV_BASE") or None
+    if not user:
+        user = os.getenv("NC_USER") or None
+    if not password:
+        password = os.getenv("NC_APP_PASSWORD") or None
     if not (url and user and password):
-        raise RuntimeError("Missing WEBDAV_URL / WEBDAV_USERNAME / WEBDAV_PASSWORD in environment/.env")
+        raise RuntimeError("Missing WEBDAV_URL / WEBDAV_USERNAME / WEBDAV_PASSWORD (or NC_* aliases) in environment/.env")
     return url.rstrip("/"), user, password  # normalize
 
 
