@@ -1,5 +1,5 @@
 # Simple helper Makefile
-.PHONY: help dev test coverage smoke summarizer build docker-run compose logs lint clean precommit
+.PHONY: help dev test coverage smoke summarizer build docker-run compose logs lint clean precommit spec-check spec-hash
 
 help:
 	@echo "Targets: dev test coverage smoke summarizer build docker-run compose logs lint clean"
@@ -40,3 +40,9 @@ precommit:
 
 clean:
 	rm -rf .pytest_cache __pycache__ */__pycache__ backbrain.db
+
+spec-check:
+	pytest -q app/tests/test_spec_drift.py
+
+spec-hash:
+	python scripts/spec_hash.py
