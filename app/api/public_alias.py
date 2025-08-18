@@ -25,6 +25,7 @@ from app.core import metrics
 from collections import deque
 from pathlib import Path
 import time
+import threading
 from typing import Deque, Dict
 
 router = APIRouter()
@@ -35,10 +36,10 @@ webdav: Any  # noqa: ANN401
 
 # Cap for summaries endpoint (env override, hard limit 1000)
 try:
-    MAX_SUMMARIES = int(os.getenv("MAX_SUMMARIES", "500"))
+    _max_summaries_env = int(os.getenv("MAX_SUMMARIES", "500"))
 except ValueError:  # pragma: no cover
-    MAX_SUMMARIES = 500
-MAX_SUMMARIES = max(1, min(MAX_SUMMARIES, 1000))
+    _max_summaries_env = 500
+MAX_SUMMARIES = max(1, min(_max_summaries_env, 1000))
 
 def _list_files_webdav(dir_path: str) -> list[str]:
     """List files in WebDAV directory returning simple basenames, sorted."""
@@ -76,15 +77,15 @@ def _list_local_fallback(kind: str) -> list[str]:
         root = LOCAL_FALLBACK_ROOT / ("entries" if kind == "entries" else "summaries")
         if not root.exists() or not root.is_dir():
             return []
-        items = []
+        items: list[tuple[str, float]] = []
         for p in root.iterdir():
             if p.is_file():
                 try:
-                    items.append((p.name, p.stat().st_mtime))
+                    items.append((p.name, float(p.stat().st_mtime)))
                 except Exception:
-                    items.append((p.name, 0))
+                    items.append((p.name, 0.0))
         items.sort(key=lambda t: t[1], reverse=True)
-        return [n for n,_ in items[:500]]
+        return [n for (n, _) in items[:500]]
     except Exception:
         return []
 
@@ -384,11 +385,14 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
             log.warning("public_write_file_fallback", extra={"path": str(local_path), "reason": str(exc)})
         except Exception as exc2:
             raise HTTPException(status_code=502, detail=f"write failed: {exc2}")
+    file_record_id = None
     if body.kind == "entries" and storage_mode != "local-fallback":
         try:
             with get_session() as s:  # type: ignore[assignment]
                 existing = s.query(FileORM).filter(FileORM.storage_path == rel_path).first()  # type: ignore[attr-defined]
-                if not existing:
+                if existing:
+                    file_record_id = existing.id
+                else:
                     f = FileORM(
                         original_name=body.name,
                         storage_path=rel_path,
@@ -397,9 +401,58 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                         sha256=hashlib.sha256(content_bytes).hexdigest(),
                     )
                     s.add(f)
-                    s.flush()
+                    s.flush()  # assign id
+                    file_record_id = f.id
         except Exception as db_exc:  # pragma: no cover
             log.warning("public_write_file_db_skip", extra={"error": str(db_exc)})
+
+    # Background auto-summary generation (heuristic or OpenAI depending on config)
+    def _bg_generate_summary(file_id: int | None, original_name: str, content: str):  # pragma: no cover - non-deterministic timing
+        try:
+            from app.services.summarizer import summarize_text
+            res = summarize_text(content, file_name=original_name, source="public_write")
+            summary_text = res.summary
+            # Persist DB row if file_id available
+            if file_id is not None:
+                try:
+                    with get_session() as s:  # type: ignore[assignment]
+                        s.add(SummaryORM(file_id=file_id, summary_text=summary_text))  # type: ignore[arg-type]
+                except Exception as exc_db:  # pragma: no cover
+                    log.warning("auto_summary_db_fail", extra={"error": str(exc_db)})
+            # Write summary artifact to summaries_dir if configured
+            try:
+                settings_local = get_settings()
+                summary_name = f"{original_name}.summary.md"
+                if settings_local.summaries_dir:
+                    summary_rel = f"{settings_local.summaries_dir}/{summary_name}"
+                    try:
+                        write_file_content(summary_rel, summary_text)
+                    except Exception as webdav_exc:  # pragma: no cover
+                        # local fallback
+                        try:
+                            fb_root = LOCAL_FALLBACK_ROOT / "summaries"
+                            fb_root.mkdir(parents=True, exist_ok=True)
+                            (fb_root / summary_name).write_text(summary_text, encoding="utf-8")
+                            log.warning("auto_summary_local_fallback", extra={"file": summary_name, "reason": str(webdav_exc)})
+                        except Exception:
+                            pass
+            except Exception as exc_any:  # pragma: no cover
+                log.warning("auto_summary_write_fail", extra={"error": str(exc_any)})
+            try:
+                log.info("public_write_file_summary_created", extra={"file": original_name, "model": res.model, "chars": len(summary_text)})
+            except Exception:
+                pass
+        except Exception as exc:  # pragma: no cover
+            log.warning("auto_summary_failed", extra={"error": str(exc)})
+
+    # Spawn thread only if this was a real save (not unchanged) and we have entry content
+    if body.kind == "entries" and status != "unchanged":
+        try:
+            # type: ignore[arg-type] - dynamic logging extras fine
+            log.info("public_write_file_summary_thread_start", extra={"file": body.name, "file_id": file_record_id})
+            threading.Thread(target=_bg_generate_summary, args=(file_record_id, body.name, body.content), daemon=True).start()
+        except Exception:  # pragma: no cover
+            pass
     etag = hashlib.sha256(body.content.encode('utf-8')).hexdigest()
     response.headers['ETag'] = f'"{etag}"'
     response.headers['X-Deduplicated'] = 'true' if status == 'unchanged' else 'false'
@@ -450,14 +503,14 @@ def get_all_summaries():  # type: ignore[override]
                     .order_by(SummaryORM.id.desc())  # type: ignore[attr-defined]
                     .limit(MAX_SUMMARIES)
                     .all())
-            file_ids = {r.file_id for r in rows if r.file_id}
-            file_map = {}
+            file_ids = {r.file_id for r in rows if r.file_id}  # type: ignore[misc]
+            file_map: dict[int, str] = {}
             if file_ids:
                 for fr in s.query(FileORM).filter(FileORM.id.in_(file_ids)).all():  # type: ignore[arg-type]
-                    file_map[fr.id] = fr.original_name
+                    file_map[fr.id] = fr.original_name  # type: ignore[attr-defined]
             summaries = [
                 {"name": file_map.get(r.file_id, f"summary_{r.id}"), "content": r.summary_text[:300]}
-                for r in rows
+                for r in rows  # type: ignore[misc]
             ]
             if summaries:
                 return AllSummariesResponse(summaries=[SummaryItem(name=s["name"], content=s["content"]) for s in summaries[:MAX_SUMMARIES]])

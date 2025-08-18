@@ -22,6 +22,7 @@ from app.core import metrics
 from typing import Any, Dict, List
 
 from contextlib import asynccontextmanager
+import subprocess
 import pathlib
 
 _VERSION_FILE = pathlib.Path(__file__).resolve().parent.parent / 'VERSION'
@@ -32,6 +33,11 @@ _SPEC_HASH_FILE = pathlib.Path(__file__).resolve().parent.parent / 'actions' / '
 async def lifespan(app: FastAPI):  # pragma: no cover
   try:
     logger.info("app_start", extra={"public_alias": settings.enable_public_alias})
+  except Exception:
+    pass
+  # Ensure DB migrations are applied at startup (idempotent); ignore failures in readonly env
+  try:  # pragma: no cover - operational path
+    subprocess.run(["alembic", "upgrade", "head"], check=False, capture_output=True)
   except Exception:
     pass
   yield

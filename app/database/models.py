@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Integer, String, DateTime, Enum as SAEnum
+from sqlalchemy import Integer, String, DateTime, Enum as SAEnum, Boolean
 from datetime import datetime, UTC
 import enum
 from sqlalchemy.orm import Mapped, mapped_column
@@ -70,3 +70,31 @@ class SummaryORM(Base):
     file_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     summary_text: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class APIKeyORM(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# Track summarizer usage (OpenAI or heuristic) for metrics/auditing
+class SummarizerUsageORM(Base):
+    __tablename__ = "summarizer_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    prefix: Mapped[str | None] = mapped_column(String, nullable=True)
+    fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
