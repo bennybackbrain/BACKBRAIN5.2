@@ -159,6 +159,57 @@ git push && git push --tags
 ```
 Diese Datei dann als Quelle für Custom GPT Actions verwenden.
 
+### Spec Freeze Prozess (reproduzierbare, überprüfbare Public API)
+Ziel: Nach einem Freeze garantiert jede Änderung am Schema einen bewussten Review (Drift-Test schlägt sonst fehl).
+
+1. Vor Änderung: Drift-Test laufen lassen
+```bash
+make spec-check   # muss PASS (oder skip bei Placeholder) sein
+```
+2. Änderung durchführen (Code / Router / Models)
+3. Neues Live Schema generieren & überschreiben
+```bash
+python3 - <<'PY'
+from app.main import app, json
+open('actions/openapi-public.json','w').write(json.dumps(app.openapi(), sort_keys=True, separators=(',',':'))+'\n')
+PY
+```
+4. Hash aktualisieren
+```bash
+PYTHONPATH=. python3 scripts/spec_hash.py   # schreibt actions/openapi-public.sha256
+```
+5. Drift-Test erneut (sollte jetzt PASS, nicht skip)
+```bash
+make spec-check
+```
+6. Commit & Tag (annotated, Hash im Tag-Text)
+```bash
+HASH=$(cat actions/openapi-public.sha256)
+git add actions/openapi-public.json actions/openapi-public.sha256
+git commit -m "chore: freeze OpenAPI spec (hash ${HASH:0:7})"
+git tag -a v5.2-spec-freeze2 -m "OpenAPI public spec frozen (hash: ${HASH})"
+git push origin main && git push origin v5.2-spec-freeze2
+```
+7. (Optional) GitHub Release aus Tag erstellen (Release Notes: Breaking / Added / Fixed / Security)
+
+Retag (falls nötig – nur wenn wirklich noch nicht veröffentlicht verwendet wurde):
+```bash
+git tag -d v5.2-spec-freeze2
+git push origin :refs/tags/v5.2-spec-freeze2
+HASH=$(cat actions/openapi-public.sha256)
+git tag -a v5.2-spec-freeze2 -m "OpenAPI public spec frozen (hash: ${HASH})"
+git push origin v5.2-spec-freeze2
+```
+
+CI Empfehlung:
+- Pipeline Schritt: `make spec-check` (bricht bei Drift).
+- Protected Branch: Änderungen an `actions/openapi-public.json` / `.sha256` erfordern Review.
+
+Hinweise:
+- Normalisierung entfernt nur `servers`; falls zusätzliche volatile Felder auftauchen (z.B. dynamic descriptions), diese ebenfalls im Hash-Skript herausfiltern.
+- Für kleinere nicht-breaking Änderungen (Descriptions, Summaries) kann optional ein Minor-Freeze Tag genutzt werden (z.B. `v5.2-spec-docupdate1`).
+- Tag `v5.2-spec-freeze1` referenziert Hash `cbd4b6a0...922e` (siehe `actions/openapi-public.sha256`).
+
 ## Logging
 Das Logging ist umgebungsabhängig konfigurierbar:
 
