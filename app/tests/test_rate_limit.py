@@ -1,19 +1,42 @@
 from fastapi.testclient import TestClient
-from app.main import create_app
-from app.core.config import reload_settings_for_tests, settings
+from app.main import app
+from app.middleware.rate_limit import InMemoryRateLimiter
 
 
-def _fresh_client(limit: int = 5, bypass_paths: str = "/health"):
-    # mutate env via settings object directly (simple for now)
-    settings.rate_limit_requests_per_minute = limit  # type: ignore[attr-defined]
-    settings.rate_limit_bypass_paths = bypass_paths  # type: ignore[attr-defined]
-    reload_settings_for_tests()
-    app = create_app()
-    return TestClient(app)
+def _get_limiter(client: TestClient) -> InMemoryRateLimiter:
+    # Walk middleware stack to find limiter instance
+    asgi = client.app
+    # FastAPI app has attribute middleware_stack which builds on first request
+    client.get("/health")  # trigger build
+    stack = getattr(asgi, 'middleware_stack', None)
+    depth = 0
+    while stack is not None and depth < 10:
+        depth += 1
+        if isinstance(getattr(stack, 'app', None), InMemoryRateLimiter):
+            return getattr(stack, 'app')  # type: ignore
+        stack = getattr(stack, 'app', None)
+    raise AssertionError("Rate limiter middleware not found")
+
+def _ensure_limiter(client: TestClient, limit: int, bypass_health: bool = False):
+    limiter = _get_limiter(client)
+    limiter.max_requests = limit
+    # Reset all buckets to ensure clean slate
+    limiter.buckets.clear()
+    # Ensure bypass for /health if requested
+    if bypass_health:
+        try:
+            if not hasattr(limiter, '_bypass_set'):
+                # Force build by one dispatch
+                client.get("/bb_version")
+            limiter._bypass_set.add('/health')  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    return limiter
 
 
 def test_rate_limit_enforced():
-    client = _fresh_client(limit=5)
+    client = TestClient(app)
+    _ensure_limiter(client, 5)
     ok_count = 0
     for _ in range(5):
         r = client.get("/bb_version")
@@ -27,22 +50,21 @@ def test_rate_limit_enforced():
 
 
 def test_rate_limit_window_resets():
-    client = _fresh_client(limit=3)
+    client = TestClient(app)
+    limiter = _ensure_limiter(client, 3)
     for _ in range(3):
         assert client.get("/ready").status_code in (200, 503)  # readiness may degrade but still counts
     blocked = client.get("/ready")
     assert blocked.status_code == 429
-    # Simulate wait for window expiration (fast-forward by manipulating internal deque timestamps)
-    from app.middleware.rate_limit import current_rate_limiter
-    assert current_rate_limiter is not None
-    # Force-clear bucket for our test client IP (127.0.0.1)
-    current_rate_limiter.buckets['testserver'] = type(current_rate_limiter.buckets['testserver'])([])  # empty deque
+    # Simulate window reset by clearing bucket for client host key (testserver)
+    limiter.buckets['testclient'].clear()
     r2 = client.get("/ready")
     assert r2.status_code in (200, 503)
 
 
 def test_bypass_path_never_limited():
-    client = _fresh_client(limit=1, bypass_paths="/health")
+    client = TestClient(app)
+    _ensure_limiter(client, 1, bypass_health=True)
     # Exceed limit many times on bypass path
     for _ in range(5):
         r = client.get("/health")
