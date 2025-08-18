@@ -1,0 +1,32 @@
+name: Auto Summary Smoke (nightly)
+
+on:
+  schedule:
+    # Täglich 02:00 UTC (04:00 Berlin im Sommer / 03:00 im Winter)
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: autosum-smoke
+      cancel-in-progress: false
+    env:
+      BB_API_BASE: https://backbrain5.fly.dev
+      BB_API_KEY: ${{ secrets.BB_API_KEY }}   # falls Public Write disabled
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}  # optional für 'fly logs'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq & flyctl (optional logs)
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          if [ -n "${FLY_API_TOKEN}" ]; then
+            curl -L https://fly.io/install.sh | sh
+            echo "$HOME/.fly/bin" >> $GITHUB_PATH
+          fi
+      - name: Run E2E auto-summary smoke
+        run: |
+          chmod +x scripts/auto_summary_smoke.sh
+          ./scripts/auto_summary_smoke.sh
