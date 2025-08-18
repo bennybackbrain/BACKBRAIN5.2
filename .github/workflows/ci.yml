@@ -23,10 +23,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ruff
       - name: Run tests
         run: pytest -q --maxfail=1
       - name: Coverage
         run: pytest --cov=app --cov-report=xml --cov-report=term-missing || true
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check . || true
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:

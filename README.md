@@ -120,7 +120,7 @@ Ergebnis: `coverage.xml` (für CI Tools) und Terminal-Report. Konfiguration in `
 Validierungs- und Fehlerfälle werden durch zusätzliche Tests (`test_validation.py`, erweiterte Pagination-Tests) abgedeckt (422 Responses, Grenzwerte für limit/offset, fehlende Felder, ungültige Pfad-Parameter).
 
 ### Rate Limiting / Bypass
-Globales Limit (pro IP) wird über `RATE_LIMIT_REQUESTS_PER_MINUTE` gesteuert (Default 120). Für bestimmte Pfade (z.B. Public GPT Actions) kann das Limit explizit umgangen werden. Built-ins: `/read-file`, `/write-file`, `/list-files`, `/get_all_summaries` (+ jeweils mit/ohne Slash). Eigene Ergänzungen kommasepariert in `.env`:
+Globales IP-basiertes Limit (`RATE_LIMIT_REQUESTS_PER_MINUTE`, Default 120) + separates, engeres Public Write Fenster (`public_writefile_limit_per_minute`). Bestimmte Public Pfade werden automatisch umgangen; zusätzliche via `RATE_LIMIT_BYPASS_PATHS`.
 
 ```
 RATE_LIMIT_BYPASS_PATHS=/metrics,/health
@@ -130,9 +130,34 @@ Header Hinweise:
 ```
 X-RateLimit-Limit: <max>
 X-RateLimit-Remaining: <rest>
+X-RateLimit-Reset: <unix_epoch_window_end>
 X-RateLimit-Bypass: true|false
 Retry-After: <Sekunden bis frei> (nur bei 429)
+X-Public-Write-Count / X-Public-Write-Limit: spezifisch für /write-file Public Alias
 ```
+
+Die konkreten Zahlen können umgebungsabhängig ohne Versionssprung angepasst werden.
+
+### Linting / Ruff im CI
+Pre-Commit Hooks existieren (`make precommit`). CI führt Ruff optional aus:
+```yaml
+	- name: Ruff
+		run: |
+			ruff check .
+			ruff format --check .
+```
+
+### OpenAPI Freeze (empfohlen für GPT Actions)
+Um unerwartete Änderungen zu vermeiden, gefrorene Public Spec einchecken:
+```bash
+curl -s https://backbrain5.fly.dev/openapi.json \
+	-o actions/openapi-public.json
+git add actions/openapi-public.json
+git commit -m "chore: freeze public OpenAPI for Actions"
+git tag -a v5.2-public-ok -m "Stable public API for GPT Actions"
+git push && git push --tags
+```
+Diese Datei dann als Quelle für Custom GPT Actions verwenden.
 
 ## Logging
 Das Logging ist umgebungsabhängig konfigurierbar:
