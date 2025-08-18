@@ -141,8 +141,18 @@ def create_app() -> FastAPI:
 app = create_app()
 
 @app.get("/health")
-def health() -> dict[str, str]:  # simple public health
-  return {"status": "ok"}
+def health(request: Request) -> JSONResponse:  # enhanced public health
+  from os import getenv
+  machine_id = getenv("FLY_MACHINE_ID", "unknown")
+  version = "5.2-public-ok2"
+  payload = {"status": "ok", "version": version, "machine": machine_id}
+  resp = JSONResponse(payload)
+  try:
+    resp.headers['X-App-Version'] = version
+    resp.headers['X-Machine-ID'] = machine_id
+  except Exception:
+    pass
+  return resp
 
 @app.get("/metrics")
 def metrics_endpoint():  # Prometheus metrics
