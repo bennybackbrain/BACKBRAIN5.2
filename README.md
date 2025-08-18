@@ -279,6 +279,31 @@ Rotation / externe Aggregation (z.B. Loki, ELK) kann auf JSON-Datei zugreifen.
 
 Fehler werden strukturiert über die Exception-Handler ausgegeben.
 
+## Monitoring & /metrics
+
+Prometheus-kompatibles Endpoint: `GET /metrics` liefert Counter & einfache Histogramme.
+
+Wichtige Counter (werden automatisch erhöht):
+```
+http_requests_total
+rate_limit_drops_total (== http_429_total)
+public_writefile_requests_total
+public_writefile_limited_total
+```
+Beispiel Abruf:
+```
+curl -s https://backbrain5.fly.dev/metrics | grep http_requests_total
+```
+Prometheus Scrape Config (Auszug):
+```yaml
+scrape_configs:
+	- job_name: backbrain
+		metrics_path: /metrics
+		static_configs:
+			- targets: ['backbrain5.fly.dev']
+```
+Request-Latenzen können optional über `request_latency_seconds` Histogramm integriert werden (siehe `app/core/metrics.py`).
+
 ## Endpunkte (Stand)
 - `GET /health`
 - `GET /metrics` (Prometheus Format)
@@ -342,6 +367,24 @@ Potenzial:
 - Tool Calling
 - Externer Task Queue
 - OpenAI echtes Streaming + Caching
+
+## Python Client Quickstart
+
+Ein minimaler Client befindet sich unter `clients/python/backbrain_client.py`.
+Beispiel:
+```bash
+export BASE_URL=https://backbrain5.fly.dev
+export BB_API_KEY=<API_KEY>  # optional für write
+python examples/python/quickstart.py
+```
+Snippet:
+```python
+from clients.python.backbrain_client import BackbrainClient
+c = BackbrainClient('https://backbrain5.fly.dev', api_key='...')
+c.write_file('demo.txt','Hallo')
+print(c.read_file('demo.txt'))
+print(c.list_files('entries')[:5])
+```
 
 ## Nextcloud Ordnerstruktur (Option B)
 
