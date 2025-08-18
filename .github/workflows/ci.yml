@@ -24,14 +24,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install ruff
+          pip install pre-commit gitleaks
       - name: Run tests
         run: pytest -q --maxfail=1
+      - name: Spec Drift Check
+        run: make spec-check
       - name: Coverage
         run: pytest --cov=app --cov-report=xml --cov-report=term-missing || true
       - name: Ruff
         run: |
           ruff check .
           ruff format --check . || true
+      - name: Pre-commit (selected hooks)
+        run: |
+          pre-commit run --all-files || true
+      - name: Gitleaks (secrets scan)
+        run: |
+          gitleaks detect --no-banner --redact || true
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:

@@ -18,6 +18,10 @@ from app.core import metrics
 from typing import Any, Dict, List
 
 from contextlib import asynccontextmanager
+import pathlib
+
+_VERSION_FILE = pathlib.Path(__file__).resolve().parent.parent / 'VERSION'
+_SPEC_HASH_FILE = pathlib.Path(__file__).resolve().parent.parent / 'actions' / 'openapi-public.sha256'
 
 
 @asynccontextmanager
@@ -148,6 +152,12 @@ def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
 @app.get("/bb_version")
 def bb_version() -> dict[str, object]:  # quick deployment verification route
   return {"app": settings.api_name, "public_alias": settings.enable_public_alias}
+
+@app.get("/version")
+def version_info() -> dict[str, str]:
+  version = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
+  spec_hash = _SPEC_HASH_FILE.read_text().strip() if _SPEC_HASH_FILE.exists() else "missing"
+  return {"version": version, "specHash": spec_hash}
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):  # type: ignore[override]
