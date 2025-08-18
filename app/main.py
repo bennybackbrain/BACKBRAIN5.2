@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request, HTTPException
 import logging
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.cors import CORSMiddleware
 
@@ -11,6 +11,9 @@ from app.api.v1 import router as v1_router
 from app.api import public_alias
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.rate_limit import select_rate_limiter
+from app.middleware.access_log import AccessLogMiddleware
+from app.middleware.request_metrics import RequestMetricsMiddleware
+from app.middleware.api_key_auth import ApiKeyAuthMiddleware
 from app.database.database import get_session
 from app.services.webdav_client import load_webdav_config
 import requests
@@ -38,7 +41,7 @@ logger = logging.getLogger("startup")
 def create_app() -> FastAPI:
   """Application factory to allow fresh instances in tests with mutated settings."""
   from app.core.config import settings as live_settings  # late import for updated values
-  _app = FastAPI(title=live_settings.api_name, version="0.1.0", lifespan=lifespan)
+  _app = FastAPI(title=live_settings.api_name, version="5.2-public-ok2", lifespan=lifespan)
   # --- Secret guard: prevent accidental use of production OpenAI keys locally ---
   # Heuristic: project (sk-proj-) or regular (sk-live, sk-prod) or long length >= 70
   key = live_settings.openai_api_key
@@ -59,9 +62,18 @@ def create_app() -> FastAPI:
     return _app.openapi_schema
   _app.openapi = custom_openapi  # type: ignore
   # Middleware
+  _app.add_middleware(RequestMetricsMiddleware)
   _app.add_middleware(RequestIDMiddleware)
+  # Attach API key (non-blocking) before rate limiter so limiter can key by API key id
+  _app.add_middleware(ApiKeyAuthMiddleware)
   RateLimiterCls = select_rate_limiter()
   _app.add_middleware(RateLimiterCls)
+  # Structured access log after rate limiting (to log only accepted requests)
+  if live_settings.access_log_enabled:
+    try:
+      _app.add_middleware(AccessLogMiddleware)
+    except Exception:
+      pass
   if live_settings.allowed_origins:
     origins = [o.strip() for o in live_settings.allowed_origins.split(',') if o.strip()]
   else:
@@ -91,6 +103,37 @@ def create_app() -> FastAPI:
           body = None
       redacted_headers = {k: v for k, v in request.headers.items() if k.lower() not in {"authorization"}}
       return JSONResponse({"method": request.method, "path": request.url.path, "headers": redacted_headers, "body": body})
+  # Exception handlers (need to be bound per app instance)
+  from fastapi.exceptions import RequestValidationError as _RVE
+  from fastapi import HTTPException as _HTTPExc
+  from fastapi.responses import JSONResponse as _JR
+  from typing import Any as _Any, Dict as _Dict, List as _List
+
+  @_app.exception_handler(_RVE)  # type: ignore
+  async def _validation_exception_handler(request: Request, exc: _RVE):  # type: ignore
+    issues: _List[_Dict[str, _Any]] = []
+    for e in exc.errors():
+      issues.append({
+        "loc": list(e.get("loc", [])),
+        "msg": e.get("msg", "Validation error"),
+        "type": e.get("type", "validation_error"),
+      })
+    payload: _Dict[str, _Any] = {
+      "error": {"code": "VALIDATION_ERROR", "message": "Request validation failed"},
+      "details": issues,
+    }
+    return _JR(status_code=422, content=payload)
+
+  @_app.exception_handler(Exception)  # type: ignore
+  async def _unhandled_exception_handler(request: Request, exc: Exception):  # type: ignore
+    msg = str(exc) if settings.debug else "Internal server error"
+    return _JR(status_code=500, content={"error": {"code": "SERVER_ERROR", "message": msg}})
+
+  @_app.exception_handler(_HTTPExc)  # type: ignore
+  async def _http_exception_handler(request: Request, exc: _HTTPExc):  # type: ignore
+    if isinstance(exc.detail, dict):
+      return _JR(status_code=exc.status_code, content=exc.detail)
+    return _JR(status_code=exc.status_code, content={"error": {"code": "HTTP_ERROR", "message": str(exc.detail)}})
   return _app
 
 # Default global app instance (backward compatibility)
@@ -103,7 +146,7 @@ def health() -> dict[str, str]:  # simple public health
 @app.get("/metrics")
 def metrics_endpoint():  # Prometheus metrics
   text = metrics.render_prometheus()
-  return JSONResponse(content=text, media_type="text/plain")
+  return PlainTextResponse(content=text, media_type="text/plain; version=0.0.4")
 
 @app.get("/ready")
 def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
@@ -137,16 +180,11 @@ def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
     pass
   overall = "ok" if db_status == "ok" and (webdav_status in {"ok", "skipped"}) else "degraded"
   status_code = 200 if overall == "ok" else 503
-  counters, _gauges = metrics.snapshot()
-  expose = {k: v for k, v in counters.items() if k in {
-    'public_writefile_requests_total', 'public_writefile_limited_total', 'rate_limit_drops_total'
-  }}
   return JSONResponse(status_code=status_code, content={
     "status": overall,
     "db": db_status,
     "webdav": webdav_status,
     "issues": issues,
-    "counters": expose,
   })
 
 @app.get("/bb_version")
