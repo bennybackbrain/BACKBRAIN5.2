@@ -343,6 +343,7 @@ scripts/backup_now.sh          # Lokales DB Backup (+ optional WebDAV Upload, Re
 scripts/rotate_actions_key.sh  # API-Key Rotation für GPT Actions
 scripts/bb_probe.sh            # Vollständiger Synthetic Probe (Health/Write/Read/ETag/List/Summaries/Metrics)
 scripts/auto_summary_smoke.sh  # E2E Auto-Summary (Write -> Poll Summaries -> ETag)
+scripts/auto_summary_errorpath.sh # Auto-Summary Fehlerpfad (WebDAV deaktiviert -> local-fallback + Metrik status=ok,storage=local-fallback)
 ```
 Ausführbar machen (falls Git Execute-Bit verloren ging):
 ```
@@ -669,6 +670,56 @@ rclone config create backbrainwebdav webdav url "$NC_WEBDAV_BASE" vendor nextclo
 Ziel: `backups/backbrain/*` (lokal oder gemountetes Volume/S3). Idempotent; löscht lokale Dateien nicht, falls Quelle verschwunden ist (optional Flags prüfen).
 
 Tag / Release Referenz: `v5.2-public-ok` markiert Zustand mit erfolgreichen Public Endpoints + GPT Action Spec (Push evtl. blockiert bis Secret-History bereinigt wurde).
+
+## Prometheus Recording & Alerting (Auto-Summary)
+
+Beispiel `prometheus-rules/autosummary.rules.yml`:
+```yaml
+groups:
+- name: autosummary.rules
+  rules:
+  # Recording
+  - record: job:bb_auto_summary_ok_rate:5m
+    expr: rate(bb_auto_summary_total{status="ok"}[5m])
+  - record: job:bb_auto_summary_err_rate:5m
+    expr: rate(bb_auto_summary_total{status="error"}[5m])
+  - record: job:bb_auto_summary_err_ratio:5m
+    expr: job:bb_auto_summary_err_rate:5m
+         / ignoring(status)
+         (job:bb_auto_summary_ok_rate:5m + job:bb_auto_summary_err_rate:5m)
+  - record: job:bb_auto_summary_p95_seconds:5m
+    expr: histogram_quantile(0.95,
+          rate(bb_auto_summary_duration_seconds_bucket[5m]))
+
+  # Alerts
+  - alert: AutoSummaryHighErrorRatio
+    expr: job:bb_auto_summary_err_ratio:5m > 0.05
+    for: 10m
+    labels: { severity: warning }
+    annotations:
+      summary: "Auto-summary error ratio > 5% (10m)"
+      description: "Check logs and WebDAV/local fallback."
+
+  - alert: AutoSummaryTooSlow
+    expr: job:bb_auto_summary_p95_seconds:5m > 3
+    for: 10m
+    labels: { severity: warning }
+    annotations:
+      summary: "Auto-summary p95 latency > 3s (10m)"
+      description: "Investigate model latency / storage slowness."
+
+  - alert: AutoSummaryNoActivity
+    expr: sum(rate(bb_auto_summary_total[30m])) == 0
+    for: 30m
+    labels: { severity: info }
+    annotations:
+      summary: "No auto-summary activity (30m)"
+      description: "Might be off-hours; verify writes are still coming."
+```
+Deployment Hinweise:
+- Datei in Prometheus `rule_files` referenzieren (z.B. `rule_files: ['prometheus-rules/*.yml']`).
+- Bei Verwendung von Alertmanager passende Routing-Regeln für `severity=warning|info` definieren.
+- Ratio kann bei sehr wenig Traffic rauschen — ggf. Minimaltraffic per `sum(rate(...)) > 0.01` in expr absichern.
 
 
 
