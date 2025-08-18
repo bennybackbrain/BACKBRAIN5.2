@@ -26,10 +26,23 @@ from collections import deque
 from pathlib import Path
 import time
 import threading
+import time
+from prometheus_client import Counter, Histogram  # type: ignore
 from typing import Deque, Dict
 
 router = APIRouter()
 log = logging.getLogger("public_alias")
+
+# Auto-summary metrics
+AUTO_SUMMARY_TOTAL = Counter(
+    "bb_auto_summary_total",
+    "Auto summary attempts",
+    ["status", "storage"],  # status=ok|error, storage=webdav|local-fallback|unknown
+)
+AUTO_SUMMARY_DURATION = Histogram(
+    "bb_auto_summary_duration_seconds",
+    "Duration of auto summary generation"
+)
 # Dynamic placeholders for optional external helpers (silence type noise)
 db: Any  # noqa: ANN401
 webdav: Any  # noqa: ANN401
@@ -407,7 +420,12 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
             log.warning("public_write_file_db_skip", extra={"error": str(db_exc)})
 
     # Background auto-summary generation (heuristic or OpenAI depending on config)
-    def _bg_generate_summary(file_id: int | None, original_name: str, content: str):  # pragma: no cover - non-deterministic timing
+    def _bg_generate_summary(file_id: int | None, original_name: str, content: str, storage: str = "unknown"):  # pragma: no cover - non-deterministic timing
+        t0 = time.perf_counter()
+        try:
+            log.info("auto_summary_start", extra={"file": original_name, "storage": storage})
+        except Exception:
+            pass
         try:
             from app.services.summarizer import summarize_text
             res = summarize_text(content, file_name=original_name, source="public_write")
@@ -420,6 +438,7 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                 except Exception as exc_db:  # pragma: no cover
                     log.warning("auto_summary_db_fail", extra={"error": str(exc_db)})
             # Write summary artifact to summaries_dir if configured
+            wrote_storage = storage
             try:
                 settings_local = get_settings()
                 summary_name = f"{original_name}.summary.md"
@@ -427,30 +446,43 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                     summary_rel = f"{settings_local.summaries_dir}/{summary_name}"
                     try:
                         write_file_content(summary_rel, summary_text)
+                        wrote_storage = "webdav"
                     except Exception as webdav_exc:  # pragma: no cover
                         # local fallback
                         try:
                             fb_root = LOCAL_FALLBACK_ROOT / "summaries"
                             fb_root.mkdir(parents=True, exist_ok=True)
                             (fb_root / summary_name).write_text(summary_text, encoding="utf-8")
+                            wrote_storage = "local-fallback"
                             log.warning("auto_summary_local_fallback", extra={"file": summary_name, "reason": str(webdav_exc)})
                         except Exception:
                             pass
             except Exception as exc_any:  # pragma: no cover
                 log.warning("auto_summary_write_fail", extra={"error": str(exc_any)})
+            # Metrics success
             try:
-                log.info("public_write_file_summary_created", extra={"file": original_name, "model": res.model, "chars": len(summary_text)})
+                AUTO_SUMMARY_TOTAL.labels(status="ok", storage=wrote_storage or storage).inc()
+                AUTO_SUMMARY_DURATION.observe(time.perf_counter() - t0)
+            except Exception:
+                pass
+            try:
+                log.info("public_write_file_summary_created", extra={"file": original_name, "model": res.model, "chars": len(summary_text), "storage": wrote_storage})
             except Exception:
                 pass
         except Exception as exc:  # pragma: no cover
-            log.warning("auto_summary_failed", extra={"error": str(exc)})
+            try:
+                AUTO_SUMMARY_TOTAL.labels(status="error", storage=storage).inc()
+                AUTO_SUMMARY_DURATION.observe(time.perf_counter() - t0)
+            except Exception:
+                pass
+            log.warning("auto_summary_failed", extra={"error": str(exc), "file": original_name, "storage": storage})
 
     # Spawn thread only if this was a real save (not unchanged) and we have entry content
     if body.kind == "entries" and status != "unchanged":
         try:
             # type: ignore[arg-type] - dynamic logging extras fine
             log.info("public_write_file_summary_thread_start", extra={"file": body.name, "file_id": file_record_id})
-            threading.Thread(target=_bg_generate_summary, args=(file_record_id, body.name, body.content), daemon=True).start()
+            threading.Thread(target=_bg_generate_summary, args=(file_record_id, body.name, body.content, storage_mode), daemon=True).start()
         except Exception:  # pragma: no cover
             pass
     etag = hashlib.sha256(body.content.encode('utf-8')).hexdigest()
