@@ -52,10 +52,13 @@ make logs         # follow compose logs
 ```
 
 ## Konfiguration
-Umgebungsvariablen via `.env` (siehe `.env.example`). Relevante Variablen:
+Umgebungsvariablen via `.env` (siehe `.env.example`). Relevante Variablen (Auszug):
 ```
 BB_DB_URL=sqlite:///./backbrain.db
 SUMMARY_MODEL=gpt-4o-mini
+ENTRIES_DIR=BACKBRAIN5.2/entries          # vereinheitlichter Entries Pfad (Fallback: INBOX_DIR oder default 01_inbox)
+SUMMARIES_DIR=BACKBRAIN5.2/summaries      # Summaries Speicherpfad
+MAX_SUMMARIES=500                         # Cap für public /get_all_summaries (hard max 1000)
 ```
 ### WebDAV / Nextcloud Variablen
 Bevorzugt (kanonisch):
@@ -71,6 +74,11 @@ NC_USER=...
 NC_APP_PASSWORD=...
 ```
 Siehe `app/core/config.py` – dort erfolgt der Fallback. Beispiel siehe `.env.example`.
+
+Unified Secrets setzen (empfohlen):
+```bash
+fly secrets set ENTRIES_DIR="BACKBRAIN5.2/entries" SUMMARIES_DIR="BACKBRAIN5.2/summaries" -a backbrain5
+```
 
 
 ### Secrets & Sicherheit
@@ -281,20 +289,23 @@ Fehler werden strukturiert über die Exception-Handler ausgegeben.
 
 ## Monitoring & /metrics
 
-Prometheus-kompatibles Endpoint: `GET /metrics` liefert Counter & einfache Histogramme.
+Prometheus Endpoint: `GET /metrics` (Format 0.0.4). Exportiert u.a.:
 
-Wichtige Counter (werden automatisch erhöht):
+Standard Metriken:
 ```
-http_requests_total
-rate_limit_drops_total (== http_429_total)
-public_writefile_requests_total
-public_writefile_limited_total
+http_requests_total{method,path,status}
+http_request_duration_seconds_bucket{method,path,le="..."}
+http_request_duration_seconds_sum
+http_request_duration_seconds_count
+rate_limit_drops_total{path}
+write_file_total
+write_file_errors_total
 ```
-Beispiel Abruf:
+Beispiel lokal:
 ```
-curl -s https://backbrain5.fly.dev/metrics | grep http_requests_total
+curl -s http://127.0.0.1:8000/metrics | grep http_requests_total | head
 ```
-Prometheus Scrape Config (Auszug):
+Prometheus Scrape Config Minimal:
 ```yaml
 scrape_configs:
 	- job_name: backbrain
@@ -302,7 +313,134 @@ scrape_configs:
 		static_configs:
 			- targets: ['backbrain5.fly.dev']
 ```
-Request-Latenzen können optional über `request_latency_seconds` Histogramm integriert werden (siehe `app/core/metrics.py`).
+Latenz Histogram Buckets: 5ms .. 5s (konfiguriert in `app/core/metrics.py`).
+
+### Access Logs
+### Operational Scripts
+### Synthetic Probe & Staging
+
+Automatischer GitHub Actions Workflow (`synthetic_probe.yml`) pingt alle 15 Minuten Prod & Staging:
+Checks: /health, /version, /metrics (http_requests_total), private List + optional Write (nur Staging).
+Secrets dafür anlegen:
+```
+BB_STAGING_X_API_KEY
+BB_PROD_X_API_KEY
+```
+Staging Deployment Konfiguration: `fly.staging.toml` (separate App `backbrain5-staging`).
+Deploy Beispiel:
+```
+fly apps create backbrain5-staging
+fly secrets set -a backbrain5-staging SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') \
+	WEBDAV_URL=... WEBDAV_USERNAME=... WEBDAV_PASSWORD=... OPENAI_API_KEY=sk-... CONFIRM_USE_PROD_KEY=1 \
+	DEFAULT_ADMIN_USERNAME=tester DEFAULT_ADMIN_PASSWORD=secret
+fly deploy -a backbrain5-staging -c fly.staging.toml
+```
+
+Neue Hilfsskripte unter `scripts/`:
+```
+scripts/smoke_staging.sh      # End-to-End Check gegen Staging
+scripts/backup_now.sh          # Lokales DB Backup (+ optional WebDAV Upload, Retention 20)
+scripts/rotate_actions_key.sh  # API-Key Rotation für GPT Actions
+scripts/bb_probe.sh            # Vollständiger Synthetic Probe (Health/Write/Read/ETag/List/Summaries/Metrics)
+scripts/auto_summary_smoke.sh  # E2E Auto-Summary (Write -> Poll Summaries -> ETag)
+```
+Ausführbar machen (falls Git Execute-Bit verloren ging):
+```
+chmod +x scripts/*.sh
+```
+Aktiviert per `ACCESS_LOG_ENABLED=1` (Default). Strukturierte JSON-Zeilen auf stdout:
+```json
+{"method":"GET","path":"/health","status":200,"duration_ms":2.143}
+```
+Deaktivieren: `ACCESS_LOG_ENABLED=0`.
+
+## Smoke Probe (bb_probe.sh)
+
+Das Skript `scripts/bb_probe.sh` prüft in einem Run:
+
+- `/health` (Status 200 + "ok")
+- `/write-file` (liefert 200 oder 409 bei unverändertem Inhalt)
+- `/read-file` + ETag/304-Validierung (Conditional GET)
+- `/list-files` enthält die Testdatei
+- `/get_all_summaries` (Basis-JSON-Check)
+- optional `/metrics` (wenn erreichbar; prüft 200)
+
+### Nutzung lokal
+```bash
+chmod +x ./scripts/bb_probe.sh
+export BB_API_BASE="https://backbrain5.fly.dev"
+export BB_API_KEY="PASTE_KEY"   # nur falls Write geschützt
+./scripts/bb_probe.sh
+```
+
+Optionale Env Variablen:
+```
+BB_NAME=myprobe.md          # eigener Dateiname
+BB_KIND=entries             # andere Base falls unterstützt
+BB_CONTENT="Hallo Welt"      # eigener Inhalt
+ENABLE_STEP_SUMMARY=true    # GitHub Actions Step Summary Markdown
+ENABLE_PUSHGATEWAY=true     # Prometheus Pushgateway aktivieren
+PUSHGATEWAY_URL=https://push.example.com
+PG_JOB=bb_probe
+PG_INSTANCE=prod
+```
+
+Exit-Code ≠ 0 → Fehler im Backend (Abbruch bei Health/List/Write/Read/Summaries/Metrics Fehlern). Warnungen (fehlendes ETag oder Metrics nicht erreichbar) beenden nicht.
+
+### CI-Beispiel (GitHub Actions)
+```yaml
+- name: Run Backbrain Smoke Probe (prod)
+	run: ./scripts/bb_probe.sh
+	env:
+		BB_API_BASE: https://backbrain5.fly.dev
+		BB_API_KEY: ${{ secrets.BB_PROD_X_API_KEY }}
+		ENABLE_STEP_SUMMARY: "true"
+```
+
+Matrix (staging + prod) ist im Workflow `synthetic_probe.yml` bereits enthalten.
+
+## Auto-Summary E2E Smoke (auto_summary_smoke.sh)
+
+Validiert den Hintergrund-Hook für automatische Summaries bei neuen `entries` Dateien.
+
+Skript: `scripts/auto_summary_smoke.sh`
+
+Was wird geprüft:
+1. POST /write-file (entries) -> 200
+2. Poll `/get_all_summaries` bis `${NAME}.summary.md` erscheint (Default Timeout 40s)
+3. Optional: Conditional GET (ETag 304) für Original-Datei
+4. Bei Timeout: Letzter Summaries-Snapshot + (optional) 200 Log Zeilen
+
+Ausführung:
+```bash
+chmod +x scripts/auto_summary_smoke.sh
+BB_API_BASE=https://backbrain5.fly.dev ./scripts/auto_summary_smoke.sh
+```
+Optional mit API Key (falls Public Write deaktiviert):
+```bash
+BB_API_BASE=https://backbrain5.fly.dev \
+BB_API_KEY=$YOUR_KEY \
+./scripts/auto_summary_smoke.sh
+```
+Environment Overrides:
+```
+POLL_MAX=30 POLL_SLEEP=1   # Feinere Poll-Parameter
+QUIET=1                    # Nur Error/Result (CI Minimal Output)
+```
+GitHub Actions (Beispiel Job-Step):
+```yaml
+- name: Auto-Summary E2E Smoke
+	run: ./scripts/auto_summary_smoke.sh
+	env:
+		BB_API_BASE: https://backbrain5.fly.dev
+		BB_API_KEY: ${{ secrets.BB_PROD_X_API_KEY }}
+```
+Exit Codes:
+```
+0 = Erfolg
+1 = Timeout / Fehler
+```
+
 
 ## Endpunkte (Stand)
 - `GET /health`
@@ -387,6 +525,19 @@ print(c.list_files('entries')[:5])
 ```
 
 ## Nextcloud Ordnerstruktur (Option B)
+## Custom GPT Setup (Public / Private)
+
+Siehe Ordner `docs/gpt/` für komplette Builder-Pakete:
+```
+docs/gpt/backbrain_custom_gpt_config.md   # Name, Beschreibung, Hinweise
+docs/gpt/openapi-public.json              # Public Spec (Kopie)
+docs/gpt/openapi-actions-private.yaml     # Private gefrorene Spec (Kopie)
+docs/gpt/USAGE.md                         # Schritt-für-Schritt Anleitung
+```
+Public Variante: Schema via URL `https://backbrain5.fly.dev/actions/openapi-public.json` (ohne Auth).
+Private Variante: Header `X-API-Key: <KEY>` plus Spec-Inhalt aus der privaten YAML einfügen.
+Empfohlen für Produktion: Private Variante (stabiler Contract, Key Rotation Skript vorhanden).
+
 
 Fest verdrahtete Minimalstruktur für Backbrain 5.2 Summaries:
 
