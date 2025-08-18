@@ -27,22 +27,12 @@ from pathlib import Path
 import time
 import threading
 import time
-from prometheus_client import Counter, Histogram  # type: ignore
+from app.core.metrics import auto_summary_total, auto_summary_duration_seconds
 from typing import Deque, Dict
 
 router = APIRouter()
 log = logging.getLogger("public_alias")
 
-# Auto-summary metrics
-AUTO_SUMMARY_TOTAL = Counter(
-    "bb_auto_summary_total",
-    "Auto summary attempts",
-    ["status", "storage"],  # status=ok|error, storage=webdav|local-fallback|unknown
-)
-AUTO_SUMMARY_DURATION = Histogram(
-    "bb_auto_summary_duration_seconds",
-    "Duration of auto summary generation"
-)
 # Dynamic placeholders for optional external helpers (silence type noise)
 db: Any  # noqa: ANN401
 webdav: Any  # noqa: ANN401
@@ -461,9 +451,9 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                 log.warning("auto_summary_write_fail", extra={"error": str(exc_any)})
             # Metrics success
             try:
-                AUTO_SUMMARY_TOTAL.labels(status="ok", storage=wrote_storage or storage).inc()
-                AUTO_SUMMARY_DURATION.observe(time.perf_counter() - t0)
-            except Exception:
+                auto_summary_total.labels(status="ok", storage=wrote_storage or storage).inc()
+                auto_summary_duration_seconds.observe(time.perf_counter() - t0)
+            except Exception:  # pragma: no cover
                 pass
             try:
                 log.info("public_write_file_summary_created", extra={"file": original_name, "model": res.model, "chars": len(summary_text), "storage": wrote_storage})
@@ -471,9 +461,9 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                 pass
         except Exception as exc:  # pragma: no cover
             try:
-                AUTO_SUMMARY_TOTAL.labels(status="error", storage=storage).inc()
-                AUTO_SUMMARY_DURATION.observe(time.perf_counter() - t0)
-            except Exception:
+                auto_summary_total.labels(status="error", storage=storage).inc()
+                auto_summary_duration_seconds.observe(time.perf_counter() - t0)
+            except Exception:  # pragma: no cover
                 pass
             log.warning("auto_summary_failed", extra={"error": str(exc), "file": original_name, "storage": storage})
 
