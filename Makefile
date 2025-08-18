@@ -44,5 +44,11 @@ clean:
 spec-check:
 	pytest -q app/tests/test_spec_drift.py
 
+actions-spec-hash:
+	python3 scripts/spec_hash.py actions/openapi-actions-private.yaml > openapi-actions-private.sha256
+
+actions-spec-check:
+	pytest -q app/tests/test_actions_private_spec_drift.py
+
 spec-hash:
 	python scripts/spec_hash.py

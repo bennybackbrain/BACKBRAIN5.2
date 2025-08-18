@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: Backbrain 5.2 (Private Actions)
+  version: 1.0.0
+  description: Private, key-protected endpoints for Custom GPT (read/list/write).
+servers:
+  - url: https://backbrain5.fly.dev
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    FileKind:
+      type: string
+      enum: [entries, summaries]
+    WriteFileRequest:
+      type: object
+      required: [name, kind, content]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        kind: { $ref: '#/components/schemas/FileKind' }
+        content: { type: string }
+    WriteFileResponse:
+      type: object
+      required: [status, name, kind]
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [saved, unchanged] }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/FileKind' }
+    ReadFileResponse:
+      type: object
+      required: [name, kind, content]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/FileKind' }
+        content: { type: string }
+    ListFilesResponse:
+      type: object
+      required: [kind, files]
+      additionalProperties: false
+      properties:
+        kind: { $ref: '#/components/schemas/FileKind' }
+        files:
+          type: array
+          items: { type: string }
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/files/write-file:
+    post:
+      operationId: writeFile
+      summary: Create or overwrite a file (private)
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WriteFileRequest' }
+      responses:
+        '200':
+          description: Saved or unchanged
+          headers:
+            ETag:
+              schema: { type: string }
+            X-Deduplicated:
+              schema: { type: string, enum: ['true', 'false'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WriteFileResponse' }
+        '401': { description: Unauthorized }
+        '413': { description: Payload too large }
+  /api/v1/files/read-file:
+    get:
+      operationId: readFile
+      summary: Read file (private)
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: name
+          required: true
+          schema: { type: string, minLength: 1 }
+        - in: query
+          name: kind
+          required: false
+          schema: { $ref: '#/components/schemas/FileKind', default: entries }
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadFileResponse' }
+        '401': { description: Unauthorized }
+        '404': { description: Not Found }
+  /api/v1/files/list-files:
+    get:
+      operationId: listFiles
+      summary: List filenames (private)
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: kind
+          required: true
+          schema: { $ref: '#/components/schemas/FileKind' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListFilesResponse' }
+        '401': { description: Unauthorized }

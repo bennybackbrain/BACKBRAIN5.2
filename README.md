@@ -74,11 +74,44 @@ Siehe `app/core/config.py` – dort erfolgt der Fallback. Beispiel siehe `.env.e
 
 
 ### Secrets & Sicherheit
-- Lege niemals echte Keys in Git ab – verwende `.env` (nicht eingecheckt) und nutze `.env.example` als Vorlage.
-- Nach Entfernen von Klartext-Secrets: Schlüssel sofort rotieren (Nextcloud App-Passwort, OpenAI-Key, SECRET_KEY).
-- In CI kannst du GitHub Actions Secrets (`settings -> secrets`) binden.
-- History-Skript (`generate_project_history.sh`) schließt `.env` explizit aus.
-- Für Produktion: SECRET_KEY auf 64 zufällige Hex-Zeichen setzen (`python -c 'import secrets; print(secrets.token_hex(32))'`).
+
+## Using API Keys
+
+Backbrain 5.2 supports static API keys via the `X-API-Key` header.
+Public endpoints remain minimal (read/list). Writing is private by default.
+
+### Server flags (in `.env`)
+```
+PUBLIC_WRITE_ENABLED=false
+RATE_LIMIT_KEY_STRATEGY=apikey   # rate limit per API key (fallback: ip)
+```
+
+### Client usage
+```
+# write (private)
+curl -s -X POST https://backbrain5.fly.dev/api/v1/files/write-file \
+	-H "Content-Type: application/json" \
+	-H "X-API-Key: <YOUR_KEY>" \
+	-d '{"name":"hello.txt","kind":"entries","content":"Hi"}' | jq
+
+# list (public)
+curl -s "https://backbrain5.fly.dev/list-files?kind=entries" | jq
+```
+
+### Rate limiting
+- Per-key window & headers:
+	`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- Public write is disabled; attempts without key return JSON error (401/403 depending on endpoint).
+
+### API Key Management Endpoints (private, JWT protected)
+Already included (prefix `/api/v1/keys`):
+```
+POST   /api/v1/keys        -> create (returns raw key once)
+GET    /api/v1/keys        -> list (no raw secret)
+DELETE /api/v1/keys/{id}   -> revoke
+```
+Rotation pattern (revoke + recreate) can be scripted; optional future endpoint `/api/v1/keys/{id}/rotate` may be added.
+
 
 ## Persistenz & Migrations
 SQLite-Datei: `backbrain.db` (standard). Anpassbar über `BB_DB_URL`.
@@ -398,6 +431,26 @@ Ein einfaches Inline-Update:
 ```bash
 PUBLIC_HOST=https://<public-host>
 jq --arg host "$PUBLIC_HOST" '.api.url = ($host + "/actions/openapi.json")' gpt_actions.json > gpt_actions.tmp && mv gpt_actions.tmp gpt_actions.json
+```
+
+### Private Actions (Custom GPT) – Sanity Curls
+```
+# must include X-API-Key
+KEY=<YOUR_KEY>
+
+# write
+curl -s -X POST https://backbrain5.fly.dev/api/v1/files/write-file \
+	-H "Content-Type: application/json" \
+	-H "X-API-Key: $KEY" \
+	-d '{"name":"gpt_actions_check.txt","kind":"entries","content":"ok"}' | jq
+
+# read
+curl -s "https://backbrain5.fly.dev/api/v1/files/read-file?name=gpt_actions_check.txt&kind=entries" \
+	-H "X-API-Key: $KEY" | jq
+
+# list
+curl -s "https://backbrain5.fly.dev/api/v1/files/list-files?kind=entries" \
+	-H "X-API-Key: $KEY" | jq
 ```
 
 ### Sicherheit

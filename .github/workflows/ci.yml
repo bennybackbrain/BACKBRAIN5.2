@@ -29,6 +29,8 @@ jobs:
         run: pytest -q --maxfail=1
       - name: Spec Drift Check
         run: make spec-check
+      - name: Private Actions spec drift check
+        run: make actions-spec-check
       - name: Coverage
         run: pytest --cov=app --cov-report=xml --cov-report=term-missing || true
       - name: Ruff
