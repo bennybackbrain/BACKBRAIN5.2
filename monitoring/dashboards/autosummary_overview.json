@@ -1,0 +1,22 @@
+{
+  "title": "Backbrain • Auto-Summary",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Auto-Summary OK rate (req/s, 5m)",
+      "targets": [
+        { "expr": "job:bb_auto_summary_ok_rate:5m" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Auto-Summary p95 latency (s, 5m)",
+      "targets": [
+        { "expr": "job:bb_auto_summary_p95_seconds:5m" }
+      ]
+    }
+  ]
+}
