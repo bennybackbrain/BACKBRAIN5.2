@@ -59,6 +59,7 @@ SUMMARY_MODEL=gpt-4o-mini
 ENTRIES_DIR=BACKBRAIN5.2/entries          # vereinheitlichter Entries Pfad (Fallback: INBOX_DIR oder default 01_inbox)
 SUMMARIES_DIR=BACKBRAIN5.2/summaries      # Summaries Speicherpfad
 MAX_SUMMARIES=500                         # Cap für public /get_all_summaries (hard max 1000)
+AUTO_INGEST_INTERVAL_SECONDS=15           # Zyklus für Auto-Ingest Scanner (Sekunden, Minimum per Code erzwungen)
 ```
 ### WebDAV / Nextcloud Variablen
 Bevorzugt (kanonisch):

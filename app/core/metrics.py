@@ -56,6 +56,20 @@ auto_summary_duration_seconds = Histogram(
     registry=registry,
 )
 
+# Auto ingest metrics
+auto_ingest_scan_total = Counter(
+    "bb_auto_ingest_scan_total",
+    "Auto-ingest scan cycles",
+    labelnames=("result",),  # result=ok|error
+    registry=registry,
+)
+auto_ingest_files_total = Counter(
+    "bb_auto_ingest_files_total",
+    "Files considered by auto-ingest",
+    labelnames=("action",),  # action=skipped|ingested|error
+    registry=registry,
+)
+
 # Legacy compatibility wrappers (no-op / passthrough)
 def inc(name: str, value: float = 1.0):  # pragma: no cover
     # deprecated – prefer explicit counters

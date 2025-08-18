@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import os
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -34,6 +33,13 @@ class Settings(BaseSettings):
 	redis_url: str | None = None  # REDIS_URL for optional redis rate limiting
 	allowed_origins: str | None = None  # comma separated list for CORS
 	manual_uploads_dir: str = "BACKBRAIN5.2/manual_uploads"  # optional zweiter Eingang (manueller Drop)
+	# --- Auto Ingest (Drag&Drop Scanner) ---
+	auto_ingest_enabled: bool = False  # AUTO_INGEST_ENABLED=1 aktiviert Hintergrund-Scan
+	auto_ingest_interval_seconds: int = 120  # AUTO_INGEST_INTERVAL_SECONDS (Standard 2min)
+	auto_ingest_min_interval_seconds: int = 2  # AUTO_INGEST_MIN_INTERVAL_SECONDS Untergrenze für Scan (Standard 2s)
+	auto_ingest_max_files_per_cycle: int = 10  # Begrenzung pro Scan um Last zu kontrollieren
+	ingest_allowed_extensions: str = ".txt,.md,.pdf"  # INGEST_ALLOWED_EXTENSIONS kommasepariert (inkl. Punkt)
+	pdf_max_pages: int = 8  # PDF_MAX_PAGES maximale Seiten für einfache Extraktion
 	enable_public_alias: bool = False  # steuert öffentliche Alias-Routen (False default for safety)
 	enable_diag: bool = False  # /diag route exposure
 	public_writefile_limit_per_minute: int = 30  # rate limit for unauthenticated public write-file (0 = disable limit)
@@ -44,7 +50,7 @@ class Settings(BaseSettings):
 	access_log_enabled: bool = True  # ACCESS_LOG_ENABLED toggle structured JSON access log middleware
 
 	# Allow unknown extra env vars (so future additions don't break startup/tests)
-	model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")  # type: ignore[arg-type]
+	model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 
 @lru_cache

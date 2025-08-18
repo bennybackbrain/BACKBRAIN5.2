@@ -24,6 +24,7 @@ from typing import Any, Dict, List
 from contextlib import asynccontextmanager
 import subprocess
 import pathlib
+import threading
 
 _VERSION_FILE = pathlib.Path(__file__).resolve().parent.parent / 'VERSION'
 _SPEC_HASH_FILE = pathlib.Path(__file__).resolve().parent.parent / 'actions' / 'openapi-public.sha256'
@@ -40,8 +41,37 @@ async def lifespan(app: FastAPI):  # pragma: no cover
     subprocess.run(["alembic", "upgrade", "head"], check=False, capture_output=True)
   except Exception:
     pass
+
+  # Background auto-ingest loop (thread + asyncio sleep coordination)
+  from app.core.config import settings as live_settings
+  if live_settings.auto_ingest_enabled:
+    try:
+      from app.services.ingest_service import run_scan_cycle
+      min_floor = max(1, live_settings.auto_ingest_min_interval_seconds)
+      interval = max(min_floor, live_settings.auto_ingest_interval_seconds)
+      stop_flag = threading.Event()
+      app.state.auto_ingest_stop = stop_flag  # type: ignore[attr-defined]
+
+      def _loop():  # pragma: no cover - timing dependent
+        while not stop_flag.is_set():
+          try:
+            run_scan_cycle()
+          except Exception:
+            logger.exception("auto_ingest_cycle_error")
+          stop_flag.wait(interval)
+
+      threading.Thread(target=_loop, name="auto-ingest", daemon=True).start()
+      logger.info("auto_ingest_loop_started", extra={"interval": interval})
+    except Exception:
+      logger.exception("auto_ingest_start_failed")
   yield
   # teardown placeholder
+  try:  # pragma: no cover
+    stop = getattr(app.state, 'auto_ingest_stop', None)  # type: ignore[attr-defined]
+    if stop:
+      stop.set()
+  except Exception:
+    pass
 
 logger = logging.getLogger("startup")
 
