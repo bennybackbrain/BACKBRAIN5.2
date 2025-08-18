@@ -15,6 +15,7 @@ from app.middleware.access_log import AccessLogMiddleware
 from app.middleware.request_metrics import RequestMetricsMiddleware
 from app.middleware.api_key_auth import ApiKeyAuthMiddleware
 from app.database.database import get_session
+from sqlalchemy import text  # for readiness lightweight query
 from app.services.webdav_client import load_webdav_config
 import requests
 from app.core import metrics
@@ -150,13 +151,18 @@ def metrics_endpoint():  # Prometheus metrics
 
 @app.get("/ready")
 def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
+  """Return 200 if core dependencies (DB) are available.
+
+  WebDAV is treated as non-fatal: errors are surfaced in payload but won't block readiness.
+  This prevents deploy flaps when external storage is temporarily unreachable.
+  """
   db_status = "unknown"
   webdav_status = "skipped"
   issues: list[str] = []
-  # DB check
+  # DB check (SQLAlchemy 2.0 requires text())
   try:
     with get_session() as s:  # type: ignore[assignment]
-      s.execute("SELECT 1")  # type: ignore[arg-type]
+      s.execute(text("SELECT 1"))  # type: ignore[arg-type]
     db_status = "ok"
   except Exception as exc:  # pragma: no cover
     db_status = "error"
@@ -167,8 +173,7 @@ def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
     if base_url and user and pwd:
       webdav_status = "ok"
       try:
-        # HEAD (fast); some servers may not allow HEAD -> fallback GET with depth header minimal
-        r = requests.request("PROPFIND", base_url.rstrip('/') + "/", auth=(user, pwd), headers={"Depth":"0"}, timeout=5)
+        r = requests.request("PROPFIND", base_url.rstrip('/') + "/", auth=(user, pwd), headers={"Depth": "0"}, timeout=5)
         if r.status_code >= 400:
           webdav_status = f"http_{r.status_code}"
           issues.append(f"webdav:http_{r.status_code}")
@@ -178,7 +183,8 @@ def ready() -> JSONResponse:  # lightweight readiness (DB + optional WebDAV)
   except Exception:
     # config missing -> keep skipped
     pass
-  overall = "ok" if db_status == "ok" and (webdav_status in {"ok", "skipped"}) else "degraded"
+  # Only fail readiness if DB is unavailable.
+  overall = "ok" if db_status == "ok" else "degraded"
   status_code = 200 if overall == "ok" else 503
   return JSONResponse(status_code=status_code, content={
     "status": overall,
