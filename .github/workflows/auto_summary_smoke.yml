@@ -18,7 +18,7 @@ jobs:
       BB_API_KEY: ${{ secrets.BB_API_KEY }}   # falls Public Write disabled
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}  # optional für 'fly logs'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install jq & flyctl (optional logs)
         run: |
           sudo apt-get update -y && sudo apt-get install -y jq
