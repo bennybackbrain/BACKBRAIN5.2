@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 	enable_diag: bool = False  # /diag route exposure
 	public_writefile_limit_per_minute: int = 30  # rate limit for unauthenticated public write-file (0 = disable limit)
 	rate_limit_bypass_paths: str | None = None  # comma-separated paths that bypass global rate limiter (in addition to built-ins)
+	public_write_enabled: bool = True  # PUBLIC_WRITE_ENABLED (allow unauthenticated write-file)
+	rate_limit_key_strategy: str = "ip"  # RATE_LIMIT_KEY_STRATEGY=apikey|ip
+	api_key_rate_limit_window: str | None = None  # API_KEY_RATE_LIMIT_WINDOW like '60/min'
+	access_log_enabled: bool = True  # ACCESS_LOG_ENABLED toggle structured JSON access log middleware
 
 	# Allow unknown extra env vars (so future additions don't break startup/tests)
 	model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")  # type: ignore[arg-type]
