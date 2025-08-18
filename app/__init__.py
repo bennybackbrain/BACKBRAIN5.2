@@ -5,4 +5,6 @@ to keep side-effect free imports for CLI tools (e.g., loader.py) that only need
 service utilities.
 """
 
-__all__ = []
+from typing import List
+
+__all__: List[str] = []

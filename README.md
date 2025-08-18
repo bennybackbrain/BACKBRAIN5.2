@@ -61,6 +61,21 @@ SUMMARIES_DIR=BACKBRAIN5.2/summaries      # Summaries Speicherpfad
 MAX_SUMMARIES=500                         # Cap für public /get_all_summaries (hard max 1000)
 AUTO_INGEST_INTERVAL_SECONDS=15           # Zyklus für Auto-Ingest Scanner (Sekunden, Minimum per Code erzwungen)
 ```
+## Lokalen Workspace-Klon einrichten (Nextcloud Desktop)
+
+Ziel: Den aktiven Workspace lokal auf dem Laptop sichtbar machen.
+
+1. Nextcloud Desktop (offizieller Client) installieren.
+2. Server verbinden: https://nx69869.your-storageshare.de (App-Passwort verwenden).
+3. Selektive Synchronisierung: Nur diesen Ordner auswählen  
+	/BACKBRAIN5.2/_WORKSPACES/BB52_WS_20250818_1815_K7Q2/
+4. Lokales Ziel: z. B. ~/BackbrainWorkspace
+5. Warten, bis alle Häkchen „grün“ sind (vollständig synchron).
+6. Smoke-Test:
+	- Über die API einen neuen Entry schreiben → nach kurzer Zeit erscheint die Summary unter 04_summaries/ sowohl im Web als auch lokal.
+7. Hinweise:
+	- Keine manuellen Umbenennungen im Workspace.
+	- Dateien vorzugsweise über API/Inbox hinzufügen.
 ### WebDAV / Nextcloud Variablen
 Bevorzugt (kanonisch):
 ```

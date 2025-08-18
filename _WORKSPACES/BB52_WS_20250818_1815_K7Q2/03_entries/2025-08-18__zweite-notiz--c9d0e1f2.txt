@@ -1,0 +1,8 @@
+Titel: Zweite Notiz
+Datum: 2025-08-18
+
+Ziel: Weitere Validierung der Workspace-Flüsse.
+Punkte:
+- Neue ID c9d0e1f2
+- Beobachte Summaries-Zuwachs
+- Grundlage für spätere Archivierung

@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from contextlib import contextmanager
+from typing import Generator
 import os
 
 DB_URL = os.getenv("BB_DB_URL", "sqlite:///./backbrain.db")
@@ -34,7 +35,7 @@ def configure_engine():
         SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 @contextmanager
-def get_session() -> Session:
+def get_session() -> Generator[Session, None, None]:
     session: Session = SessionLocal()
     try:
         yield session

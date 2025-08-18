@@ -19,6 +19,9 @@ smoke:
 summarizer:
 	bash scripts/summarizer_smoke.sh || true
 
+auto-summary-errorpath:
+	bash scripts/auto_summary_errorpath.sh || true
+
 build:
 	docker build -t backbrain:dev .
 

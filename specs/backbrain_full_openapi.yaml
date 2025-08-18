@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: Backbrain 5.2 Full API
+  version: 1.0.0
+  description: Vereinte Spezifikation: Authentifizierte v1 Endpoints + öffentliche Alias-Routen.
+servers:
+  - url: https://backbrain5.fly.dev
+paths:
+  /health:
+    get:
+      operationId: healthRoot
+      summary: Health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                required: [status]
+  /list-files:
+    get:
+      operationId: listFilesPublic
+      summary: List files (public)
+      parameters:
+        - in: query
+          name: kind
+          required: true
+          schema: { type: string, enum: [entries, summaries] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileListResponse' }
+  /read-file:
+    get:
+      operationId: readFilePublic
+      summary: Read file (public)
+      parameters:
+        - in: query
+          name: name
+          required: true
+          schema: { type: string }
+        - in: query
+          name: kind
+          required: false
+          schema: { type: string, enum: [entries, summaries], default: entries }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ReadFileResponse' } } } }
+        '404': { description: Not found }
+  /write-file:
+    post:
+      operationId: writeFilePublic
+      summary: Write file (public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WriteFileRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WriteFileResponse' } } } }
+        '413': { description: Too large }
+  /get_all_summaries:
+    get:
+      operationId: getAllSummariesPublic
+      summary: All summaries (public)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AllSummariesResponse' } } } }
+components:
+  schemas:
+    FileListResponse:
+      type: object
+      properties:
+        kind: { type: string }
+        files:
+          type: array
+          items: { type: string }
+      required: [kind, files]
+    ReadFileResponse:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string }
+        content: { type: string }
+      required: [name, kind, content]
+    WriteFileRequest:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string }
+        content: { type: string }
+      required: [name, kind, content]
+    WriteFileResponse:
+      type: object
+      properties:
+        status: { type: string }
+        name: { type: string }
+        kind: { type: string }
+      required: [status, name, kind]
+    SummaryItem:
+      type: object
+      properties:
+        name: { type: string }
+        content: { type: string }
+      required: [name, content]
+    AllSummariesResponse:
+      type: object
+      properties:
+        summaries:
+          type: array
+          items: { $ref: '#/components/schemas/SummaryItem' }
+      required: [summaries]

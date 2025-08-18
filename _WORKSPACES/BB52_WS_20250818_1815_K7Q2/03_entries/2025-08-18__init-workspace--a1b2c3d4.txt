@@ -1,0 +1,8 @@
+Workspace bootstrap note.
+
+This entry documents the initialization of workspace BB52_WS_20250818_1815_K7Q2.
+
+Contents:
+- Folders created
+- Manifest stored
+- Conventions locked

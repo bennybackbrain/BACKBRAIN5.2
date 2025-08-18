@@ -1,7 +1,7 @@
 import os
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import create_app
 from app.database.database import get_session, init_db
 from app.database.models import UserORM
 from app.core.security import hash_password
@@ -12,8 +12,10 @@ def client(tmp_path):
     # Fresh isolated DB per test
     os.environ["BB_DB_URL"] = f"sqlite:///{tmp_path / 'test.db'}"
     os.environ["BB_TESTING"] = "1"
+    os.environ['ENABLE_PUBLIC_ALIAS'] = '0'  # keep OpenAPI stable relative to frozen spec
     init_db()
-    return TestClient(app)
+    test_app = create_app()
+    return TestClient(test_app)
 
 
 @pytest.fixture()

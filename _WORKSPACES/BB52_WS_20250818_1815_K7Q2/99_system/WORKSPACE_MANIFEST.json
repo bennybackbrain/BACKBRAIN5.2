@@ -1,0 +1,18 @@
+{
+  "version": "5.2",
+  "workspace_id": "BB52_WS_20250818_1815_K7Q2",
+  "root": "/BACKBRAIN5.2/_WORKSPACES/BB52_WS_20250818_1815_K7Q2/",
+  "folders": {
+    "inbox": "01_inbox",
+    "entries": "03_entries",
+    "summaries": "04_summaries",
+    "archive": "05_archive",
+    "rejects": "90_rejects",
+    "system": "99_system"
+  },
+  "naming": {
+    "entry": "YYYY-MM-DD__slug--<hash8>.<ext>",
+    "summary": "<stem>.summary.md"
+  },
+  "created_at": "2025-08-18T18:15:00Z"
+}

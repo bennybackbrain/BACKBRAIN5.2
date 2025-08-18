@@ -4,6 +4,46 @@ primary_region = "fra"
 [build]
   dockerfile = "Dockerfile"
 
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "3s"
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/ready"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"
+
+[env]
+  PROJECT_NAME = "Backbrain 5.2 (staging)"
+  ACCESS_LOG_ENABLED = "1"
+  ENABLE_PUBLIC_ALIAS = "true"
+  PUBLIC_WRITE_ENABLED = "false"
+  RATE_LIMIT_BYPASS_PATHS = "/health,/ready,/metrics,/version,/write-file,/write-file/"
+  INBOX_DIR = "BACKBRAIN5.2/01_inbox"
+  SUMMARIES_DIR = "BACKBRAIN5.2/summaries"
+  SUMMARIZER_PROVIDER = "openai"
+  SUMMARY_MODEL = "gpt-4o-mini"
+
+# Secrets (set via: fly secrets set -a backbrain5-staging VAR=VALUE ... )app = "backbrain5-staging"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
 [env]
   ENABLE_PUBLIC_ALIAS = "false"
   PUBLIC_WRITE_ENABLED = "false"

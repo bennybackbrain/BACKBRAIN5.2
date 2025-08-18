@@ -14,7 +14,7 @@ from typing import Any  # dynamic layers
 import os
 import logging
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import hashlib
 from app.core.config import get_settings
 from app.database.database import get_session
@@ -136,7 +136,7 @@ class AllSummariesResponse(BaseModel):
     operation_id="listFiles",
     description="Returns up to 500 newest file names for the given kind (entries|summaries)."
 )
-def public_list_files(kind: str, request: Request = None):  # type: ignore[override]
+def public_list_files(kind: str):
     settings = get_settings()
     if kind not in ("entries", "summaries"):
         raise HTTPException(status_code=400, detail="invalid kind")
@@ -148,36 +148,35 @@ def public_list_files(kind: str, request: Request = None):  # type: ignore[overr
         with get_session() as s:  # type: ignore[assignment]
             if kind == "entries":
                 like_prefix = f"{settings.inbox_dir}/%"
-                rows = (s.query(FileORM)  # type: ignore[attr-defined]
-                        .filter(FileORM.storage_path.like(like_prefix))  # type: ignore[attr-defined]
-                        .order_by(FileORM.id.desc())  # type: ignore[attr-defined]
-                        .limit(500)
-                        .all())
-                db_rows = len(rows)
-                files.extend([r.original_name for r in rows])
+                entry_rows = (s.query(FileORM)
+                              .filter(FileORM.storage_path.like(like_prefix))
+                              .order_by(FileORM.id.desc())
+                              .limit(500)
+                              .all())
+                db_rows = len(entry_rows)
+                files.extend([r.original_name for r in entry_rows])
             else:
-                rows = (s.query(SummaryORM)  # type: ignore[attr-defined]
-                        .order_by(SummaryORM.id.desc())  # type: ignore[attr-defined]
-                        .limit(500)
-                        .all())
-                db_rows = len(rows)
-                file_ids = {r.file_id for r in rows if r.file_id}
-                file_map = {}
+                summary_rows = (s.query(SummaryORM)
+                                .order_by(SummaryORM.id.desc())
+                                .limit(500)
+                                .all())
+                db_rows = len(summary_rows)
+                file_ids = {r.file_id for r in summary_rows if r.file_id}
+                file_map: dict[int, str] = {}
                 if file_ids:
-                    for fr in s.query(FileORM).filter(FileORM.id.in_(file_ids)).all():  # type: ignore[arg-type,attr-defined]
+                    for fr in s.query(FileORM).filter(FileORM.id.in_(file_ids)).all():  # type: ignore[arg-type]
                         file_map[fr.id] = fr.original_name
-                for r in rows:
-                    files.append(file_map.get(r.file_id, f"summary_{r.id}"))
+                for r in summary_rows:
+                    name = file_map.get(r.file_id, f"summary_{r.id}") if r.file_id is not None else f"summary_{r.id}"
+                    files.append(name)
     except Exception as exc:  # pragma: no cover
         degraded = True
         log.warning("public_list_files_degraded_db", extra={"kind": kind, "error": str(exc)})
-    # Fallback: if entries and DB empty OR degraded -> attempt WebDAV directory listing
     if not webdav_disabled:
         try:
             if kind == "entries" and (degraded or db_rows == 0):
                 base = settings.inbox_dir
                 if base:
-                    # ensure directory (best-effort)
                     try:
                         mkdirs(base)
                     except Exception:
@@ -190,32 +189,19 @@ def public_list_files(kind: str, request: Request = None):  # type: ignore[overr
                             continue
                         web_files.append(name)
                     if web_files:
-                        # Replace only if we actually found something
                         files = sorted(set(files) | set(web_files), reverse=True)[:500]
                         log.info("public_list_files_webdav_fallback", extra={"kind": kind, "count": len(files), "db_rows": db_rows})
         except Exception as exc:  # pragma: no cover
             log.warning("public_list_files_webdav_fallback_failed", extra={"error": str(exc)})
-    # Local fallback enumeration (only if still empty)
     if not files:
         lf = _list_local_fallback(kind)
         if lf:
             files = lf
-    resp = FileListResponse(kind=kind, files=files)
     try:
-        client_ip = request.client.host if request and request.client else 'unknown'
-        log.info("public_list_files", extra={"kind": kind, "count": len(files), "ip": client_ip})
-    # request metrics collected centrally
+        log.info("public_list_files", extra={"kind": kind, "count": len(files)})
     except Exception:
         pass
-    # Attach degraded hint header if response object available via dependency (not here), else just return
-    if request is not None:
-        try:
-            # FastAPI will set headers on Response object; we create a simple attribute hack via state (not critical)
-            if degraded and hasattr(request, 'state'):
-                setattr(request.state, 'x_degraded_list', 'true')  # marker (not automatically serialized)
-        except Exception:
-            pass
-    return resp
+    return FileListResponse(kind=kind, files=files)
 
 
 @router.get("/read-file")
@@ -225,9 +211,9 @@ def public_list_files(kind: str, request: Request = None):  # type: ignore[overr
     tags=["public"],
     summary="Read a stored file (entry or summary)",
     operation_id="readFile",
-    description="Reads full text content. Supports ETag via If-None-Match for caching. kind defaults to 'entries'."
+    description="Reads full text content (no 304 shortcut if unchanged in this simplified fallback)."
 )
-def public_read_file(name: str, kind: str = "entries", request: Request = None, response: Response = None):  # type: ignore[assignment]
+def public_read_file(name: str, kind: str = "entries"):
     settings = get_settings()
     if kind not in ("entries", "summaries"):
         raise HTTPException(status_code=400, detail="invalid kind")
@@ -244,22 +230,9 @@ def public_read_file(name: str, kind: str = "entries", request: Request = None, 
         try:
             content = get_file_content(rel_path)
             attempted_remote = True
-            etag = hashlib.sha256(content.encode('utf-8')).hexdigest()
-            inm = request.headers.get('if-none-match') if request else None  # type: ignore[union-attr]
-            cache_bust = request.query_params.get('cb') if request else None  # type: ignore[union-attr]
-            if not cache_bust and inm and inm.strip('"') == etag:
-                if response is not None:
-                    response.status_code = 304
-                    response.headers['ETag'] = f'"{etag}"'
-                    response.headers['Cache-Control'] = 'private, max-age=30'
-                return ReadFileResponse(name=name, kind=kind, content="")
-            if response is not None:
-                response.headers['ETag'] = f'"{etag}"'
-                response.headers['Cache-Control'] = 'private, max-age=30'
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="not found")
         except Exception:
-            # Will fallback to local below
             content = None
     if content is None:
         # Local fallback read
@@ -282,16 +255,7 @@ def public_read_file(name: str, kind: str = "entries", request: Request = None, 
             if attempted_remote:
                 raise HTTPException(status_code=404, detail="not found")
             raise HTTPException(status_code=502, detail="unavailable")
-    # Optional gzip (base64) if client accepts and large content
-    content_out = content
-    if request and 'gzip' in request.headers.get('accept-encoding', '').lower() and len(content) > 2048:
-        try:
-            import gzip, base64
-            gz = gzip.compress(content.encode('utf-8'))
-            content_out = 'gzip64:' + base64.b64encode(gz).decode('ascii')
-        except Exception:
-            pass
-    out = ReadFileResponse(name=name, kind=kind, content=content_out)
+    out = ReadFileResponse(name=name, kind=kind, content=content)
     try:
         log.info("public_read_file", extra={"name": name, "kind": kind, "size": len(content)})
     except Exception:
@@ -307,21 +271,24 @@ def public_read_file(name: str, kind: str = "entries", request: Request = None, 
     operation_id="writeFile",
     description="Writes UTF-8 text. Rejects if > max_text_file_bytes. Sets ETag header. If identical content exists returns status=unchanged."
 )
-def public_write_file(body: WriteFileRequest, request: Request, response: Response):  # type: ignore[assignment]
+def public_write_file(body: WriteFileRequest, request: Request, response: Response):
     settings = get_settings()
     if not settings.public_write_enabled:
         raise HTTPException(status_code=403, detail="public write disabled")
     # Per-app, per-IP minute window limiter using app.state
     if settings.public_writefile_limit_per_minute > 0:
-        store: Dict[str, Deque[float]] = getattr(request.app.state, 'public_write_buckets', None)  # type: ignore[attr-defined]
-        if store is None:
-            store = {}
+        store_existing = getattr(request.app.state, 'public_write_buckets', None)  # type: ignore[attr-defined]
+        if store_existing is None:
+            store: Dict[str, Deque[float]] = {}
             setattr(request.app.state, 'public_write_buckets', store)  # type: ignore[attr-defined]
+        else:
+            store = store_existing  # type: ignore[assignment]
         ip = request.client.host if request.client else 'unknown'
-        dq = store.get(ip)
-        if dq is None:
-            dq = deque()  # type: ignore[var-annotated]
-            store[ip] = dq
+        existing_dq = store.get(ip)
+        if existing_dq is None:
+            store[ip] = deque()
+            existing_dq = store[ip]
+        dq = existing_dq  # Deque[float]
         now = time.time()
         while dq and now - dq[0] > 60:
             dq.popleft()
@@ -332,7 +299,8 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
                 pass
             log.info("public_write_file_rate_limited", extra={"ip": ip, "count": len(dq)})
             raise HTTPException(status_code=429, detail='public write limit reached')
-        dq.append(now)
+        # record this request
+        dq.append(float(now))
         try:
             metrics.write_file_total.inc()
         except Exception:
@@ -384,11 +352,11 @@ def public_write_file(body: WriteFileRequest, request: Request, response: Respon
             local_path = fallback_root / body.name
             local_path.write_text(body.content, encoding="utf-8")
             storage_mode = "local-fallback"
-            status = "saved" if status != "unchanged" else status
+            # status remains 'saved' (unchanged only set earlier when content identical)
             log.warning("public_write_file_fallback", extra={"path": str(local_path), "reason": str(exc)})
         except Exception as exc2:
             raise HTTPException(status_code=502, detail=f"write failed: {exc2}")
-    file_record_id = None
+    file_record_id: Optional[int] = None
     if body.kind == "entries" and storage_mode != "local-fallback":
         try:
             with get_session() as s:  # type: ignore[assignment]
@@ -530,10 +498,10 @@ def get_all_summaries():  # type: ignore[override]
             if file_ids:
                 for fr in s.query(FileORM).filter(FileORM.id.in_(file_ids)).all():  # type: ignore[arg-type]
                     file_map[fr.id] = fr.original_name  # type: ignore[attr-defined]
-            summaries = [
-                {"name": file_map.get(r.file_id, f"summary_{r.id}"), "content": r.summary_text[:300]}
-                for r in rows  # type: ignore[misc]
-            ]
+            summaries: list[dict[str, str]] = []
+            for r in rows:  # type: ignore[misc]
+                name = file_map.get(r.file_id, f"summary_{r.id}") if r.file_id is not None else f"summary_{r.id}"
+                summaries.append({"name": name, "content": r.summary_text[:300]})
             if summaries:
                 return AllSummariesResponse(summaries=[SummaryItem(name=s["name"], content=s["content"]) for s in summaries[:MAX_SUMMARIES]])
     except Exception:
@@ -542,7 +510,7 @@ def get_all_summaries():  # type: ignore[override]
     # 2) WebDAV fallback
     settings = get_settings()
     names = _list_files_webdav(settings.summaries_dir)
-    out = []
+    out: list[dict[str, str]] = []
     for name in names[:MAX_SUMMARIES]:
         text = _read_text_webdav(f"{settings.summaries_dir}/{name}")
         if text:
@@ -550,7 +518,7 @@ def get_all_summaries():  # type: ignore[override]
     return AllSummariesResponse(summaries=[SummaryItem(name=s["name"], content=s["content"]) for s in out])
 
 # Backward compatibility alias for older test name
-public_get_all_summaries = get_all_summaries  # type: ignore
+public_get_all_summaries = get_all_summaries
 
 # Simple alias expected by some docs/snippets
 def list_files(kind: str):  # pragma: no cover - thin wrapper
@@ -558,7 +526,7 @@ def list_files(kind: str):  # pragma: no cover - thin wrapper
 
 
 @router.get("/diag/storage", tags=["public"], summary="Diagnostic storage paths (public)")
-def public_diag_storage(request: Request = None):  # type: ignore[override]
+def public_diag_storage():
     """Lightweight diagnostic: returns configured directories.
 
     Purpose: quickly confirm path alignment (inbox vs summaries) for troubleshooting list-files mismatches.
@@ -573,8 +541,7 @@ def public_diag_storage(request: Request = None):  # type: ignore[override]
     except Exception as exc:  # pragma: no cover
         data = {"error": str(exc)}
     try:
-        client_ip = request.client.host if request and request.client else 'unknown'
-        log.info("public_diag_storage", extra={"ip": client_ip})
+        log.info("public_diag_storage")
     except Exception:
         pass
     return data

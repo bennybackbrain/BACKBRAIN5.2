@@ -1,0 +1,47 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Backframe Assistant",
+  "name_for_model": "backframe_assistant",
+  "description_for_human": "Interagiere mit deinem Second Brain: Dateien hochladen, auflisten, lesen, Summaries abrufen.",
+  "description_for_model": "Interface zu Backframe API: schreibe und lese Dateien, hole Summaries. Nutze Funktionen verantwortungsvoll und wiederhole keine identischen Requests.",
+  "auth": {
+    "type": "api_key",
+    "api_key_header_name": "X-API-Key"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://YOUR_PUBLIC_HOST/actions/openapi.json"
+  },
+  "functions": [
+    {
+      "name": "upload_file",
+      "description": "Lade eine Textdatei hoch (verwende für kurzes Notiz- oder Gesprächslog).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {"type": "string", "description": "Dateiname, z.B. note.txt"},
+          "content": {"type": "string", "description": "Textinhalt der Datei"}
+        },
+        "required": ["filename", "content"]
+      }
+    },
+    {
+      "name": "list_files",
+      "description": "Liste zuletzt hochgeladene Dateien (max 50).",
+      "parameters": {
+        "type": "object",
+        "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}},
+        "required": []
+      }
+    },
+    {
+      "name": "list_summaries",
+      "description": "Hole die neuesten zusammenfassungen (max 50).",
+      "parameters": {
+        "type": "object",
+        "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}},
+        "required": []
+      }
+    }
+  ]
+}

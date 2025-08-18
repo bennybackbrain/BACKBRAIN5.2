@@ -74,6 +74,35 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+# --- Summary Cache (Turbo-Layer) ---
+
+def get_summary_cache_enabled() -> bool:
+	return os.getenv("SUMMARY_CACHE_ENABLED", "true").lower() == "true"
+
+def get_summary_cache_dir() -> str:
+	return os.getenv("SUMMARY_CACHE_DIR", "/data/BB52_cache/summaries")
+
+def ensure_summary_cache_dir(path: str):
+	try:
+		os.makedirs(path, exist_ok=True)
+	except Exception as e:
+		import logging
+		logging.getLogger("app.config").warning(f"Could not ensure dir {path}: {e}")
+
+# --- Summary Cache (Turbo-Layer) ---
+import os
+import logging
+SUMMARY_CACHE_ENABLED = os.getenv("SUMMARY_CACHE_ENABLED", "true").lower() == "true"
+SUMMARY_CACHE_DIR = os.getenv("SUMMARY_CACHE_DIR", "/data/BB52_cache/summaries")
+
+def _ensure_dir(path: str):
+	try:
+		os.makedirs(path, exist_ok=True)
+	except Exception as e:
+		logging.getLogger("app.config").warning(f"Could not ensure dir {path}: {e}")
+
+if SUMMARY_CACHE_ENABLED:
+	_ensure_dir(SUMMARY_CACHE_DIR)
 
 def reload_settings_for_tests():  # pragma: no cover - test utility
 	"""Force reload of settings (for tests that mutate env like enabling public alias).

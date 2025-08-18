@@ -48,3 +48,20 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  scrape_smoke:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    env:
+      BASE: https://backbrain5.fly.dev
+    steps:
+      - name: Health
+        run: |
+          curl -fsS "$BASE/health" | jq .
+      - name: Version
+        run: |
+          curl -fsS "$BASE/version" | jq .
+      - name: Metrics (has http_requests_total)
+        run: |
+          curl -fsS "$BASE/metrics" | tee /tmp/metrics.txt >/dev/null
+          grep -q '^http_requests_total' /tmp/metrics.txt

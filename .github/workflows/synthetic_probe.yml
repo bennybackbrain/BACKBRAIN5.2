@@ -1,0 +1,38 @@
+name: Backbrain5.2 Synthetic Probe
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: staging
+            base: https://backbrain5-staging.fly.dev
+            key_secret: BB_STAGING_X_API_KEY
+          - name: prod
+            base: https://backbrain5.fly.dev
+            key_secret: BB_PROD_X_API_KEY
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make probe executable
+        run: chmod +x ./scripts/bb_probe.sh
+
+      - name: Run probe (${{ matrix.target.name }})
+        env:
+          BB_API_BASE: ${{ matrix.target.base }}
+          BB_API_KEY: ${{ secrets[matrix.target.key_secret] }}
+          ENABLE_PUSHGATEWAY: "false"
+          PUSHGATEWAY_URL: "https://push.example.com/metrics"
+          PG_JOB: "bb_probe"
+          PG_INSTANCE: "${{ matrix.target.name }}"
+          ENABLE_STEP_SUMMARY: "true"
+        run: ./scripts/bb_probe.sh

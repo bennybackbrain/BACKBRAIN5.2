@@ -1,0 +1,8 @@
+Titel: Erste Notiz
+Datum: 2025-08-18
+
+Diese erste Notiz demonstriert den normalen Entry-Flow im dedizierten Workspace.
+Stichpunkte:
+- Struktur intakt
+- Hash e5f6a7b8 simuliert
+- Nächster Schritt: weitere Einträge oder Duplikat-Test

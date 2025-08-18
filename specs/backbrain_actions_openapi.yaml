@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Backbrain Actions API
+  version: 0.1.0
+servers:
+  - url: https://CHANGE_ME_TUNNEL_URL
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/files/read-file:
+    get:
+      operationId: readFile
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string }
+          required: true
+        - in: query
+          name: name
+          schema: { type: string }
+          required: true
+      responses:
+        '200': { description: OK }
+  /api/v1/files/write-file:
+    post:
+      operationId: writeFile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, name, content]
+              properties:
+                kind: { type: string }
+                name: { type: string }
+                content: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/v1/files/list-files:
+    get:
+      operationId: listFiles
+      parameters:
+        - in: query
+          name: kind
+          required: true
+          schema: { type: string }
+        - in: query
+          name: prefix
+          required: false
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, default: 100 }
+      responses:
+        '200': { description: OK }
+  /api/v1/webdav/mkdir:
+    post:
+      operationId: makeDir
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string }
+      responses:
+        '200': { description: OK }
+        '201': { description: Created }
+  /api/v1/summarizer/summarize-file:
+    post:
+      operationId: summarizeFile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, name]
+              properties:
+                kind: { type: string, enum: [entries, summaries] }
+                name: { type: string }
+                style: { type: string, enum: [short, bullet, long] }
+      responses:
+        '200': { description: OK }
+  /api/v1/summarizer/summarize-prefix:
+    post:
+      operationId: summarizePrefix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, prefix]
+              properties:
+                kind: { type: string, enum: [entries, summaries] }
+                prefix: { type: string }
+                limit: { type: integer, default: 50 }
+                style: { type: string, enum: [short, bullet, long] }
+      responses:
+        '200': { description: OK }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

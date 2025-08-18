@@ -11,6 +11,10 @@ Format orientiert sich lose an Keep a Changelog. Aktuelle Version: 0.1.0 (API in
 - Öffentliche Alias-Endpunkte (`/list-files`, `/read-file`, `/write-file`, `/get_all_summaries`) ohne Auth für leichtgewichtige Integrationen / GPT Actions Prototyping.
 - Vollständige konsolidierte OpenAPI 3.1.0 Spec (`specs/backbrain_full_openapi.yaml`).
 - Feature Flag `ENABLE_PUBLIC_ALIAS` (Settings `enable_public_alias`) um Public Routen abschaltbar zu machen.
+- Auto-Summary Hintergrund-Hook (Thread) mit heuristischem Fallback & OpenAI Provider Integration.
+- Prometheus Metriken: `auto_summary_total{status,storage}` & `auto_summary_duration_seconds` Histogram.
+- Scripts: `auto_summary_smoke.sh`, `auto_summary_errorpath.sh` + Makefile Targets.
+- README Abschnitt Auto-Summary (Ablauf, Provider Switch, Fallback, Metriken).
 
 #### Security
 - Hinweis: Public Alias Routen sind absichtlich ungeschützt – nur in isolierten Test-Setups oder hinter Reverse Proxy mit Auth verwenden.

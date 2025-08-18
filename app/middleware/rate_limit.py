@@ -10,9 +10,9 @@ from collections import defaultdict, deque
 from typing import Deque, Dict, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+import os
 from app.core.config import settings
 from app.core import metrics
-from app.core.metrics import inc_labeled
 
 try:  # optional dependency
     import redis  # type: ignore
@@ -35,7 +35,7 @@ class InMemoryRateLimiter(BaseHTTPMiddleware):
         path = request.url.path
         # Build bypass set once (cache on instance)
         if not hasattr(self, '_bypass_set'):
-            default_public = {"/read-file", "/read-file/", "/list-files", "/list-files/", "/write-file", "/write-file/", "/get_all_summaries", "/get_all_summaries/"}
+            default_public = {"/read-file", "/read-file/", "/list-files", "/list-files/", "/write-file", "/write-file/", "/get_all_summaries", "/get_all_summaries/", "/version"}
             dynamic: set[str] = set()
             raw = settings.rate_limit_bypass_paths
             if raw:
@@ -51,15 +51,23 @@ class InMemoryRateLimiter(BaseHTTPMiddleware):
             except Exception:
                 pass
             return response
-        client_ip = request.client.host if request.client else 'unknown'
+        # Determine key: API key id if strategy apikey and header present (later set by auth middleware), else IP
+        key_basis = 'unknown'
+        if settings.rate_limit_key_strategy == 'apikey' and hasattr(request.state, 'api_key_id'):
+            key_basis = f"api_key:{getattr(request.state, 'api_key_id')}"
+        else:
+            key_basis = request.client.host if request.client else 'unknown'
+        client_ip = key_basis
         now = time.time()
         dq = self.buckets[client_ip]
         while dq and now - dq[0] > self.window_seconds:
             dq.popleft()
         remaining = self.max_requests - len(dq)
         if remaining <= 0:
-            metrics.inc('rate_limit_drops_total')
-            inc_labeled('http_requests', status=429, phase='limit')
+            try:
+                metrics.rate_limit_drops_total.labels(path=path).inc()
+            except Exception:
+                pass
             resp = Response(status_code=429, content='Too Many Requests')
             resp.headers['X-RateLimit-Limit'] = str(self.max_requests)
             resp.headers['X-RateLimit-Remaining'] = '0'
@@ -74,7 +82,7 @@ class InMemoryRateLimiter(BaseHTTPMiddleware):
             resp.headers['Retry-After'] = str(retry_after)
             return resp
         dq.append(now)
-        metrics.inc('http_requests_total')
+    # counting now done in dedicated timing middleware; keep minimal compatibility
         response = await call_next(request)
         # Add headers (best-effort)
         try:
@@ -111,14 +119,16 @@ class RedisRateLimiter(BaseHTTPMiddleware):  # pragma: no cover - requires redis
         current, _ = pipe.execute()
         current_i = int(current)
         if current_i > self.max_requests:
-            metrics.inc('rate_limit_drops_total')
-            inc_labeled('http_requests', status=429, phase='limit')
+            try:
+                metrics.rate_limit_drops_total.labels(path=request.url.path).inc()
+            except Exception:
+                pass
             resp = Response(status_code=429, content='Too Many Requests')
             resp.headers['X-RateLimit-Limit'] = str(self.max_requests)
             resp.headers['X-RateLimit-Remaining'] = '0'
             resp.headers['Retry-After'] = '60'
             return resp
-        metrics.inc('http_requests_total')
+    # request counting handled centrally
         response = await call_next(request)
         try:
             response.headers['X-RateLimit-Limit'] = str(self.max_requests)
@@ -130,9 +140,16 @@ class RedisRateLimiter(BaseHTTPMiddleware):  # pragma: no cover - requires redis
 
 
 def select_rate_limiter():  # returns class
+    if os.getenv('BB_TESTING') == '1':  # disable limiting in test runs
+        return NoOpRateLimiter
     if settings.redis_url:
         if redis is not None:
             return RedisRateLimiter
     return InMemoryRateLimiter
 
-__all__ = ['InMemoryRateLimiter', 'RedisRateLimiter', 'select_rate_limiter', 'current_rate_limiter']
+
+class NoOpRateLimiter(BaseHTTPMiddleware):  # pragma: no cover - trivial
+    async def dispatch(self, request, call_next):  # type: ignore[no-untyped-def]
+        return await call_next(request)
+
+__all__ = ['InMemoryRateLimiter', 'RedisRateLimiter', 'select_rate_limiter', 'current_rate_limiter', 'NoOpRateLimiter']
