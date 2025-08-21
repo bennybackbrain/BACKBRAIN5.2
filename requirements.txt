@@ -15,3 +15,4 @@ webdavclient3==3.14.6
 python-dotenv==1.0.1
 prometheus-client==0.20.0
 pdfminer.six==20240706
+requests
