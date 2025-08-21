@@ -1,2 +1,154 @@
-{"note":"Copy for GPT builder convenience. Source canonical at /actions/openapi-public.json","openapi_copy":true,"version":"5.2-public-ok2"}
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Backbrain5-v2 Public API",
+		"version": "1.0.0"
+	},
+	"servers": [
+		{ "url": "https://backbrain5-v2.fly.dev" }
+	],
+	"paths": {
+		"/health": {
+			"get": {
+				"operationId": "get_health",
+				"summary": "Health",
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"status": { "type": "string" }
+									},
+									"required": ["status"]
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/v1/files/write": {
+			"post": {
+				"operationId": "post_v1_files_write",
+				"summary": "Write file",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"required": ["kind", "name", "content"],
+								"properties": {
+									"kind": { "type": "string", "enum": ["original", "summaries", "entries"] },
+									"name": { "type": "string" },
+									"content": { "type": "string" }
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"success": { "type": "boolean" },
+										"name": { "type": "string" }
+									},
+									"required": ["success", "name"]
+								}
+							}
+						}
+					},
+					"201": { "description": "Created" }
+				}
+			}
+		},
+		"/v1/files/read": {
+			"get": {
+				"operationId": "get_v1_files_read",
+				"summary": "Read file",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "kind",
+						"required": true,
+						"schema": { "type": "string", "enum": ["original", "summaries", "entries"] }
+					},
+					{
+						"in": "query",
+						"name": "name",
+						"required": true,
+						"schema": { "type": "string" }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"name": { "type": "string" },
+										"content": { "type": "string" },
+										"etag": { "type": "string" }
+									},
+									"required": ["name", "content"]
+								}
+							}
+						}
+					},
+					"304": { "description": "Not Modified" },
+					"404": { "description": "Not found" }
+				}
+			}
+		},
+		"/v1/files/list": {
+			"get": {
+				"operationId": "get_v1_files_list",
+				"summary": "List files",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "kind",
+						"required": true,
+						"schema": { "type": "string", "enum": ["original", "summaries", "entries"] }
+					},
+					{
+						"in": "query",
+						"name": "limit",
+						"required": false,
+						"schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"items": {
+											"type": "array",
+											"items": { "type": "string" }
+										}
+									},
+									"required": ["items"]
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
